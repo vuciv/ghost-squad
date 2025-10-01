@@ -1,8 +1,8 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-const GameManager = require('./GameManager');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import path from 'path';
+import GameManager = require('./GameManager');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 // Serve static files from client directory
 app.use(express.static(path.join(__dirname, '../client')));
+// Serve shared folder for browser-compatible JS files
 app.use('/shared', express.static(path.join(__dirname, '../shared')));
 
 // Game manager instance
@@ -30,18 +31,27 @@ io.on('connection', (socket) => {
     const roomCode = gameManager.createRoom();
     socket.join(roomCode);
     console.log(`Room created: ${roomCode} by ${socket.id}`);
+
+    // Send initial game state to the creator
+    const game = gameManager.getGame(roomCode);
+    if (game) {
+      socket.emit('gameState', game.getState());
+    }
+
     callback({ success: true, roomCode });
   });
 
-  socket.on('joinRoom', ({ roomCode, ghostType }, callback) => {
-    const result = gameManager.joinRoom(roomCode, socket.id, ghostType);
+  socket.on('joinRoom', ({ roomCode, username, ghostType }, callback) => {
+    const result = gameManager.joinRoom(roomCode, socket.id, username || 'Ghost', ghostType);
     if (result.success) {
       socket.join(roomCode);
-      console.log(`Player ${socket.id} joined room ${roomCode} as ${ghostType}`);
+      console.log(`Player ${username || socket.id} joined room ${roomCode} as ${ghostType}`);
 
       // Send game state to all players in room
       const game = gameManager.getGame(roomCode);
-      io.to(roomCode).emit('gameState', game.getState());
+      if (game) {
+        io.to(roomCode).emit('gameState', game.getState());
+      }
     }
     callback(result);
   });
@@ -53,6 +63,13 @@ io.on('connection', (socket) => {
       game.handlePlayerInput(socket.id, direction);
     } else {
       console.log(`Game not found for room ${roomCode}`);
+    }
+  });
+
+  socket.on('requestGameState', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (game) {
+      socket.emit('gameState', game.getState());
     }
   });
 

@@ -1,15 +1,22 @@
-const Game = require('./Game');
+import Game = require('./Game');
+import { Server } from 'socket.io';
+
+type GhostType = 'blinky' | 'pinky' | 'inky' | 'clyde';
 
 class GameManager {
-  constructor(io) {
+  private io: Server;
+  private games: Map<string, Game>;
+  private playerRooms: Map<string, string>;
+
+  constructor(io: Server) {
     this.io = io;
-    this.games = new Map(); // roomCode -> Game instance
-    this.playerRooms = new Map(); // socketId -> roomCode
+    this.games = new Map();
+    this.playerRooms = new Map();
   }
 
-  generateRoomCode() {
+  private generateRoomCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code;
+    let code: string;
     do {
       code = '';
       for (let i = 0; i < 4; i++) {
@@ -19,7 +26,7 @@ class GameManager {
     return code;
   }
 
-  createRoom() {
+  createRoom(): string {
     const roomCode = this.generateRoomCode();
     const game = new Game(roomCode, this.io);
     this.games.set(roomCode, game);
@@ -34,7 +41,7 @@ class GameManager {
     return roomCode;
   }
 
-  joinRoom(roomCode, socketId, ghostType) {
+  joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType): { success: boolean; error?: string } {
     const game = this.games.get(roomCode);
 
     if (!game) {
@@ -53,17 +60,17 @@ class GameManager {
       return { success: false, error: 'Ghost already taken' };
     }
 
-    game.addPlayer(socketId, ghostType);
+    game.addPlayer(socketId, username, ghostType);
     this.playerRooms.set(socketId, roomCode);
 
     return { success: true };
   }
 
-  getGame(roomCode) {
+  getGame(roomCode: string): Game | undefined {
     return this.games.get(roomCode);
   }
 
-  handleDisconnect(socketId) {
+  handleDisconnect(socketId: string): void {
     const roomCode = this.playerRooms.get(socketId);
     if (roomCode) {
       const game = this.games.get(roomCode);
@@ -81,4 +88,4 @@ class GameManager {
   }
 }
 
-module.exports = GameManager;
+export = GameManager;

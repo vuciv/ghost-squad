@@ -13,14 +13,28 @@
     <!-- Main Menu -->
     <div id="main-menu" class="menu-screen active">
       <h1 class="title">👻 GHOST SQUAD</h1>
+      <canvas id="title-sprites" width="160" height="40" style="image-rendering: pixelated; margin: 0 auto; display: block;"></canvas>
       <p class="subtitle">Hunt the AI Pacman!</p>
-      <div class="menu-buttons">
-        <button id="create-room-btn" class="btn btn-primary">Create Game</button>
-        <button id="join-room-btn" class="btn btn-secondary">Join Game</button>
+
+      <div class="menu-section">
+        <label for="username-input" class="input-label">Your Name:</label>
+        <input type="text" id="username-input" placeholder="Enter your name" maxlength="20">
       </div>
-      <div id="join-input" class="hidden">
-        <input type="text" id="room-code-input" placeholder="Enter 4-character code" maxlength="4">
-        <button id="join-submit-btn" class="btn btn-primary">Join</button>
+
+      <div class="menu-section">
+        <button id="create-room-btn" class="btn btn-primary">🎮 Create New Game</button>
+      </div>
+
+      <div class="divider">
+        <span>OR</span>
+      </div>
+
+      <div class="menu-section">
+        <label for="room-code-input" class="input-label">Room Code:</label>
+        <div class="join-input-group">
+          <input type="text" id="room-code-input" placeholder="Enter 4-digit code" maxlength="4">
+          <button id="join-room-btn" class="btn btn-secondary">Join Game →</button>
+        </div>
       </div>
     </div>
 
@@ -28,26 +42,32 @@
     <div id="lobby-screen" class="menu-screen">
       <h2>Game Lobby</h2>
       <div id="room-code-display" class="room-code"></div>
-      <p class="subtitle">Share this code with friends!</p>
+      <p class="subtitle">Share this code with friends to join!</p>
+      <div id="player-count-display" class="player-count">0/4 Players</div>
 
       <div class="ghost-selection">
-        <h3>Select Your Ghost:</h3>
+        <h3>Choose Your Ghost:</h3>
+        <p class="ghost-hint">Click a ghost to select it. Locked ghosts are taken by other players.</p>
         <div class="ghost-grid">
           <button class="ghost-btn" data-ghost="blinky">
-            <span class="ghost-icon" style="color: #ff0000;">👻</span>
+            <canvas class="ghost-icon-canvas" width="32" height="32" data-ghost="blinky"></canvas>
             <span>Blinky</span>
+            <div class="player-label"></div>
           </button>
           <button class="ghost-btn" data-ghost="pinky">
-            <span class="ghost-icon" style="color: #ffb8ff;">👻</span>
+            <canvas class="ghost-icon-canvas" width="32" height="32" data-ghost="pinky"></canvas>
             <span>Pinky</span>
+            <div class="player-label"></div>
           </button>
           <button class="ghost-btn" data-ghost="inky">
-            <span class="ghost-icon" style="color: #00ffff;">👻</span>
+            <canvas class="ghost-icon-canvas" width="32" height="32" data-ghost="inky"></canvas>
             <span>Inky</span>
+            <div class="player-label"></div>
           </button>
           <button class="ghost-btn" data-ghost="clyde">
-            <span class="ghost-icon" style="color: #ffb852;">👻</span>
+            <canvas class="ghost-icon-canvas" width="32" height="32" data-ghost="clyde"></canvas>
             <span>Clyde</span>
+            <div class="player-label"></div>
           </button>
         </div>
       </div>

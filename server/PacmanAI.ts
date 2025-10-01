@@ -1,24 +1,35 @@
-const AStar = require('./AStar');
-const { MAZE_LAYOUT } = require('../shared/maze');
-const CONSTANTS = require('../shared/constants');
+import AStar = require('./AStar');
+import { MAZE_LAYOUT, Position } from '../shared/maze';
+import CONSTANTS = require('../shared/constants');
+
+type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+type AIState = 'DOT_SEEKING' | 'EVASION' | 'AGGRESSIVE';
 
 class PacmanAI {
-  constructor(position) {
+  private position: Position;
+  private direction: Direction;
+  private pathfinder: AStar;
+  private state: AIState;
+  private target: Position | null;
+  private updateInterval: number;
+  private lastUpdate: number;
+
+  constructor(position: Position) {
     this.position = { ...position };
     this.direction = 'RIGHT';
     this.pathfinder = new AStar();
-    this.state = 'DOT_SEEKING'; // DOT_SEEKING, EVASION, AGGRESSIVE
+    this.state = 'DOT_SEEKING';
     this.target = null;
     this.updateInterval = 200; // Update path every 200ms
     this.lastUpdate = Date.now();
   }
 
-  update(dots, powerPellets, ghostPositions, isFrightened) {
+  update(dots: Position[], powerPellets: Position[], ghostPositions: Position[], isFrightened: boolean): Direction {
     const now = Date.now();
 
     // Use integer positions for pathfinding
-    const intPos = { x: Math.floor(this.position.x), y: Math.floor(this.position.y) };
-    const intGhostPositions = ghostPositions.map(g => ({
+    const intPos: Position = { x: Math.floor(this.position.x), y: Math.floor(this.position.y) };
+    const intGhostPositions: Position[] = ghostPositions.map(g => ({
       x: Math.floor(g.x),
       y: Math.floor(g.y)
     }));
@@ -67,7 +78,7 @@ class PacmanAI {
     return this.direction;
   }
 
-  updateTarget(dots, powerPellets, ghostPositions) {
+  private updateTarget(dots: Position[], powerPellets: Position[], ghostPositions: Position[]): void {
     if (this.state === 'AGGRESSIVE' && ghostPositions.length > 0) {
       // Target nearest ghost
       this.target = this.findClosest(this.position, ghostPositions);
@@ -85,7 +96,7 @@ class PacmanAI {
     }
   }
 
-  findClosest(from, positions) {
+  private findClosest(from: Position, positions: Position[]): Position | null {
     if (positions.length === 0) return null;
 
     let closest = positions[0];
@@ -102,7 +113,7 @@ class PacmanAI {
     return closest;
   }
 
-  findNearestDotCluster(dots) {
+  private findNearestDotCluster(dots: Position[]): Position | null {
     if (dots.length === 0) return null;
 
     // Find the densest area of dots
@@ -112,7 +123,7 @@ class PacmanAI {
     return this.findClosest(this.position, clusters);
   }
 
-  findSafestDotCluster(dots, ghostPositions) {
+  private findSafestDotCluster(dots: Position[], ghostPositions: Position[]): Position | null {
     if (dots.length === 0) return null;
 
     const clusters = this.clusterDots(dots);
@@ -137,9 +148,9 @@ class PacmanAI {
     return safest;
   }
 
-  clusterDots(dots) {
+  private clusterDots(dots: Position[]): Position[] {
     // Simple clustering: find areas with high dot density
-    const clusters = [];
+    const clusters: Position[] = [];
     const radius = 5;
 
     for (let y = 0; y < CONSTANTS.GRID_HEIGHT; y += radius) {
@@ -161,28 +172,28 @@ class PacmanAI {
     return clusters;
   }
 
-  manhattanDistance(a, b) {
+  private manhattanDistance(a: Position, b: Position): number {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   }
 
-  setPosition(x, y) {
+  setPosition(x: number, y: number): void {
     this.position.x = x;
     this.position.y = y;
   }
 
-  getPosition() {
+  getPosition(): Position {
     return { ...this.position };
   }
 
-  getDirection() {
+  getDirection(): Direction {
     return this.direction;
   }
 
-  getState() {
+  getState(): AIState {
     return this.state;
   }
 
-  canMoveInDirection(pos, direction) {
+  private canMoveInDirection(pos: Position, direction: Direction): boolean {
     const dir = CONSTANTS.DIRECTIONS[direction];
     if (!dir) return false;
 
@@ -197,8 +208,8 @@ class PacmanAI {
     return MAZE_LAYOUT[newY][newX] !== 0;
   }
 
-  findAnyValidDirection(pos) {
-    const directions = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+  private findAnyValidDirection(pos: Position): Direction {
+    const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
 
     // Try to continue in current direction first
     if (this.canMoveInDirection(pos, this.direction)) {
@@ -217,4 +228,4 @@ class PacmanAI {
   }
 }
 
-module.exports = PacmanAI;
+export = PacmanAI;

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sprite Sheet Debugger</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #fff;
+      font-family: monospace;
+    }
+    #container {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    #sprite-display {
+      text-align: center;
+    }
+    #sprite {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #222;
+      border: 2px solid #0f0;
+    }
+    #controls {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      justify-content: center;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      background: #333;
+      color: #0f0;
+      border: 1px solid #0f0;
+      cursor: pointer;
+      font-family: monospace;
+    }
+    button:hover {
+      background: #444;
+    }
+    #info {
+      font-size: 24px;
+      margin: 20px 0;
+    }
+    #grid-view {
+      display: grid;
+      grid-template-columns: repeat(32, 20px);
+      gap: 2px;
+      background: #222;
+      padding: 10px;
+      border: 2px solid #0f0;
+    }
+    .grid-cell {
+      width: 20px;
+      height: 20px;
+      image-rendering: pixelated;
+      cursor: pointer;
+      border: 1px solid #444;
+      position: relative;
+    }
+    .grid-cell:hover {
+      border: 1px solid #0f0;
+    }
+    .grid-cell.selected {
+      border: 2px solid #ff0;
+      box-shadow: 0 0 10px #ff0;
+    }
+    .frame-number {
+      position: absolute;
+      top: 0;
+      left: 0;
+      font-size: 8px;
+      background: rgba(0,0,0,0.7);
+      padding: 1px;
+      display: none;
+    }
+    .grid-cell:hover .frame-number {
+      display: block;
+    }
+    #config-output {
+      background: #222;
+      padding: 15px;
+      border: 2px solid #0f0;
+      margin-top: 20px;
+      white-space: pre;
+      font-size: 12px;
+      max-width: 800px;
+      overflow-x: auto;
+    }
+    h2 {
+      color: #0f0;
+    }
+    #scale-control {
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎮 Sprite Sheet Debugger</h1>
+  <p>Click on sprites in the grid or use arrow keys to navigate</p>
+
+  <div id="container">
+    <div id="sprite-display">
+      <div id="info">Frame: <span id="frame-num">0</span></div>
+      <canvas id="sprite" width="160" height="160"></canvas>
+      <div id="controls">
+        <button id="prev">← Previous</button>
+        <button id="next">Next →</button>
+        <button id="mark">Mark Frame</button>
+        <button id="clear-marks">Clear Marks</button>
+      </div>
+      <div id="scale-control">
+        <label>Grid Scale: <input type="range" id="grid-scale" min="10" max="40" value="20"></label>
+      </div>
+      <div style="margin: 10px 0;">
+        <label>Frame Width: <input type="number" id="frame-width" value="16" min="1" max="64" style="width: 60px;"></label>
+        <label>Frame Height: <input type="number" id="frame-height" value="16" min="1" max="64" style="width: 60px;"></label>
+        <br>
+        <label>Horizontal Margin: <input type="number" id="margin-x" value="0" min="0" max="32" style="width: 60px;"></label>
+        <label>Vertical Margin: <input type="number" id="margin-y" value="0" min="0" max="32" style="width: 60px;"></label>
+        <br>
+        <label>Horizontal Spacing: <input type="number" id="spacing-x" value="0" min="0" max="32" style="width: 60px;"></label>
+        <label>Vertical Spacing: <input type="number" id="spacing-y" value="0" min="0" max="32" style="width: 60px;"></label>
+        <br>
+        <button id="rebuild">Rebuild Grid</button>
+      </div>
+      <div id="marked-frames">
+        <h3>Marked Frames:</h3>
+        <div id="marked-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="grid-view"></div>
+
+  <div id="config-output"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+  <script>
+    let currentFrame = 0;
+    let spriteSheet = new Image();
+    let canvas = document.getElementById('sprite');
+    let ctx = canvas.getContext('2d');
+    let markedFrames = [];
+
+    let FRAME_WIDTH = 16;
+    let FRAME_HEIGHT = 16;
+    let MARGIN_X = 0;
+    let MARGIN_Y = 0;
+    let SPACING_X = 0;
+    let SPACING_Y = 0;
+
+    spriteSheet.src = 'assets/spritesheet.png';
+
+    spriteSheet.onload = function() {
+      const cols = Math.floor((spriteSheet.width - MARGIN_X * 2 + SPACING_X) / (FRAME_WIDTH + SPACING_X));
+      const rows = Math.floor((spriteSheet.height - MARGIN_Y * 2 + SPACING_Y) / (FRAME_HEIGHT + SPACING_Y));
+      const totalFrames = cols * rows;
+      console.log(`Loaded sprite sheet: ${spriteSheet.width}x${spriteSheet.height}`);
+      console.log(`Grid: ${cols} cols x ${rows} rows`);
+      console.log(`Total frames: ${totalFrames}`);
+
+      // Log some key frames
+      console.log('Frame 196:', 196 % cols, Math.floor(196 / cols));
+      console.log('Frame 238:', 238 % cols, Math.floor(238 / cols));
+      console.log('Frame 280:', 280 % cols, Math.floor(280 / cols));
+      console.log('Frame 322:', 322 % cols, Math.floor(322 / cols));
+
+      // Create grid view
+      createGridView(totalFrames);
+
+      // Draw initial frame
+      drawFrame(currentFrame);
+    };
+
+    function createGridView(totalFrames) {
+      const gridView = document.getElementById('grid-view');
+      const cols = Math.floor((spriteSheet.width - MARGIN_X * 2 + SPACING_X) / (FRAME_WIDTH + SPACING_X));
+      gridView.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
+
+      for (let i = 0; i < totalFrames; i++) {
+        const cell = document.createElement('canvas');
+        cell.className = 'grid-cell';
+        cell.width = FRAME_WIDTH;
+        cell.height = FRAME_HEIGHT;
+        cell.dataset.frame = i;
+
+        const cellCtx = cell.getContext('2d');
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+
+        const srcX = MARGIN_X + col * (FRAME_WIDTH + SPACING_X);
+        const srcY = MARGIN_Y + row * (FRAME_HEIGHT + SPACING_Y);
+
+        cellCtx.drawImage(
+          spriteSheet,
+          srcX,
+          srcY,
+          FRAME_WIDTH,
+          FRAME_HEIGHT,
+          0, 0,
+          FRAME_WIDTH,
+          FRAME_HEIGHT
+        );
+
+        cell.addEventListener('click', () => {
+          currentFrame = i;
+          drawFrame(currentFrame);
+          updateSelectedCell();
+        });
+
+        const frameLabel = document.createElement('div');
+        frameLabel.className = 'frame-number';
+        frameLabel.textContent = i;
+
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        wrapper.appendChild(cell);
+        wrapper.appendChild(frameLabel);
+
+        gridView.appendChild(wrapper);
+      }
+
+      updateSelectedCell();
+    }
+
+    function updateSelectedCell() {
+      document.querySelectorAll('.grid-cell').forEach(cell => {
+        if (parseInt(cell.dataset.frame) === currentFrame) {
+          cell.classList.add('selected');
+        } else {
+          cell.classList.remove('selected');
+        }
+      });
+    }
+
+    function drawFrame(frameNum) {
+      const cols = Math.floor((spriteSheet.width - MARGIN_X * 2 + SPACING_X) / (FRAME_WIDTH + SPACING_X));
+      const col = frameNum % cols;
+      const row = Math.floor(frameNum / cols);
+
+      const srcX = MARGIN_X + col * (FRAME_WIDTH + SPACING_X);
+      const srcY = MARGIN_Y + row * (FRAME_HEIGHT + SPACING_Y);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+
+      ctx.drawImage(
+        spriteSheet,
+        srcX,
+        srcY,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        0, 0,
+        canvas.width,
+        canvas.height
+      );
+
+      document.getElementById('frame-num').textContent = frameNum;
+    }
+
+    document.getElementById('prev').addEventListener('click', () => {
+      if (currentFrame > 0) {
+        currentFrame--;
+        drawFrame(currentFrame);
+        updateSelectedCell();
+      }
+    });
+
+    document.getElementById('next').addEventListener('click', () => {
+      const totalFrames = Math.floor(spriteSheet.width / FRAME_WIDTH) *
+                          Math.floor(spriteSheet.height / FRAME_HEIGHT);
+      if (currentFrame < totalFrames - 1) {
+        currentFrame++;
+        drawFrame(currentFrame);
+        updateSelectedCell();
+      }
+    });
+
+    document.getElementById('mark').addEventListener('click', () => {
+      if (!markedFrames.includes(currentFrame)) {
+        markedFrames.push(currentFrame);
+        updateMarkedList();
+      }
+    });
+
+    document.getElementById('clear-marks').addEventListener('click', () => {
+      markedFrames = [];
+      updateMarkedList();
+    });
+
+    function updateMarkedList() {
+      const list = document.getElementById('marked-list');
+      list.innerHTML = markedFrames.map(f => `<span style="color: #ff0">${f}</span>`).join(', ');
+
+      const output = document.getElementById('config-output');
+      output.textContent = `Marked frames array: [${markedFrames.join(', ')}]\n\nExample animation config:\nthis.anims.create({\n  key: 'my_animation',\n  frames: this.anims.generateFrameNumbers('sprites', { frames: [${markedFrames.join(', ')}] }),\n  frameRate: 10,\n  repeat: -1\n});`;
+    }
+
+    // Keyboard controls
+    document.addEventListener('keydown', (e) => {
+      const totalFrames = Math.floor(spriteSheet.width / FRAME_WIDTH) *
+                          Math.floor(spriteSheet.height / FRAME_HEIGHT);
+
+      if (e.key === 'ArrowLeft' && currentFrame > 0) {
+        currentFrame--;
+        drawFrame(currentFrame);
+        updateSelectedCell();
+      } else if (e.key === 'ArrowRight' && currentFrame < totalFrames - 1) {
+        currentFrame++;
+        drawFrame(currentFrame);
+        updateSelectedCell();
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        if (!markedFrames.includes(currentFrame)) {
+          markedFrames.push(currentFrame);
+          updateMarkedList();
+        }
+      }
+    });
+
+    document.getElementById('grid-scale').addEventListener('input', (e) => {
+      const scale = e.target.value;
+      document.getElementById('grid-view').style.gridTemplateColumns =
+        `repeat(${Math.floor(spriteSheet.width / FRAME_WIDTH)}, ${scale}px)`;
+      document.querySelectorAll('.grid-cell').forEach(cell => {
+        cell.style.width = scale + 'px';
+        cell.style.height = scale + 'px';
+      });
+    });
+
+    document.getElementById('rebuild').addEventListener('click', () => {
+      FRAME_WIDTH = parseInt(document.getElementById('frame-width').value);
+      FRAME_HEIGHT = parseInt(document.getElementById('frame-height').value);
+      MARGIN_X = parseInt(document.getElementById('margin-x').value);
+      MARGIN_Y = parseInt(document.getElementById('margin-y').value);
+      SPACING_X = parseInt(document.getElementById('spacing-x').value);
+      SPACING_Y = parseInt(document.getElementById('spacing-y').value);
+
+      // Clear grid
+      document.getElementById('grid-view').innerHTML = '';
+      markedFrames = [];
+      currentFrame = 0;
+
+      // Rebuild
+      const cols = Math.floor((spriteSheet.width - MARGIN_X * 2 + SPACING_X) / (FRAME_WIDTH + SPACING_X));
+      const rows = Math.floor((spriteSheet.height - MARGIN_Y * 2 + SPACING_Y) / (FRAME_HEIGHT + SPACING_Y));
+      const totalFrames = cols * rows;
+
+      console.log(`Rebuilt with marginX: ${MARGIN_X}, marginY: ${MARGIN_Y}, spacingX: ${SPACING_X}, spacingY: ${SPACING_Y}`);
+      console.log(`New grid: ${cols} cols x ${rows} rows = ${totalFrames} frames`);
+
+      createGridView(totalFrames);
+      drawFrame(currentFrame);
+    });
+  </script>
+</body>
+</html>

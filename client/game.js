@@ -16,12 +16,25 @@ class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Graphics will be created programmatically
+    // Load the raw sprite sheet image. We'll parse frames manually to allow
+    // horizontal margins without affecting the vertical cuts.
+    this.load.image('spritesheet', 'assets/spritesheet.png');
+
+    // Set up error handling for missing sprites (fallback to colored circles)
+    this.load.on('loaderror', (file) => {
+      console.warn('Failed to load sprite:', file.key);
+    });
   }
 
   create() {
     // Create maze
     this.createMaze();
+
+    // Build texture frames so horizontal margins don't impact vertical slicing
+    this.buildSpriteSheetTexture();
+
+    // Create animations for sprites
+    this.createAnimations();
 
     // Cache movement speed so it stays in sync with server pacing
     this.moveSpeed = this.computeMoveSpeed();
@@ -66,6 +79,54 @@ class GameScene extends Phaser.Scene {
     this.socket.on('gameOver', (data) => {
       this.handleGameOver(data);
     });
+  }
+
+  buildSpriteSheetTexture() {
+    const sourceTexture = this.textures.get('spritesheet');
+    if (!sourceTexture) {
+      return;
+    }
+
+    const config = {
+      frameWidth: 16,
+      frameHeight: 16,
+      marginX: 8,
+      marginY: 0,
+      spacingX: 0,
+      spacingY: 0
+    };
+
+    const sourceImage = sourceTexture.getSourceImage();
+
+    // Recreate the working texture so we can control frame cuts precisely
+    if (this.textures.exists('sprites')) {
+      this.textures.remove('sprites');
+    }
+
+    const canvasTexture = this.textures.createCanvas('sprites', sourceImage.width, sourceImage.height);
+    canvasTexture.context.drawImage(sourceImage, 0, 0);
+    canvasTexture.refresh();
+    canvasTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+
+    const cols = Math.floor((sourceImage.width - config.marginX * 2 + config.spacingX) /
+      (config.frameWidth + config.spacingX));
+    const rows = Math.floor((sourceImage.height - config.marginY * 2 + config.spacingY) /
+      (config.frameHeight + config.spacingY));
+
+    let frameIndex = 0;
+    for (let row = 0; row < rows; row++) {
+      const y = config.marginY + row * (config.frameHeight + config.spacingY);
+
+      for (let col = 0; col < cols; col++) {
+        const x = config.marginX + col * (config.frameWidth + config.spacingX);
+        const frameName = frameIndex.toString();
+        canvasTexture.add(frameName, 0, x, y, config.frameWidth, config.frameHeight);
+        frameIndex++;
+      }
+    }
+
+    // Release the raw sheet once we've copied it into our working texture
+    this.textures.remove('spritesheet');
   }
 
   createMaze() {
@@ -178,6 +239,179 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  createAnimations() {
+    if (!this.textures.exists('sprites')) {
+      console.warn('Sprite texture missing; animations will fallback to simple shapes.');
+      return;
+    }
+
+    // Ghost animations - Blinky (red)
+    this.anims.create({
+      key: 'blinky_right',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [192, 193] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'blinky_left',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [194, 195] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'blinky_up',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [196, 197] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'blinky_down',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [198, 199] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    // Pinky (pink)
+    this.anims.create({
+      key: 'pinky_right',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [233, 234] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pinky_left',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [235, 236] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pinky_up',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [237, 238] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pinky_down',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [239, 240] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    // Inky (cyan)
+    this.anims.create({
+      key: 'inky_right',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [274, 275] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'inky_left',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [276, 277] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'inky_up',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [278, 279] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'inky_down',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [280, 281] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    // Clyde (orange)
+    this.anims.create({
+      key: 'clyde_right',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [315, 316] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'clyde_left',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [317, 318] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'clyde_up',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [319, 320] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'clyde_down',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [321, 322] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    // Scared state (blue ghosts)
+    const ghosts = ['blinky', 'pinky', 'inky', 'clyde'];
+    ghosts.forEach(ghost => {
+      this.anims.create({
+        key: `${ghost}_scared`,
+        frames: this.anims.generateFrameNumbers('sprites', { frames: [200, 201] }),
+        frameRate: 5,
+        repeat: -1
+      });
+    });
+
+    // Dead state (eyes only)
+    ghosts.forEach(ghost => {
+      this.anims.create({
+        key: `${ghost}_dead`,
+        frames: this.anims.generateFrameNumbers('sprites', { frames: [202, 203] }),
+        frameRate: 15,
+        repeat: -1
+      });
+    });
+
+    // Pacman animations
+    this.anims.create({
+      key: 'pacman_right',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [28, 29] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pacman_left',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [69, 70] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pacman_up',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [110, 111] }),
+      frameRate: 10,
+      repeat: -1
+    });
+
+    this.anims.create({
+      key: 'pacman_down',
+      frames: this.anims.generateFrameNumbers('sprites', { frames: [151, 152] }),
+      frameRate: 10,
+      repeat: -1
+    });
+  }
+
   updateGameState(state) {
     // Update HUD
     this.updateHUD(state);
@@ -240,12 +474,19 @@ class GameScene extends Phaser.Scene {
     const targetY = pacman.position.y * tileSize + tileSize / 2;
 
     if (!this.pacmanSprite) {
-      this.pacmanSprite = this.add.circle(
-        targetX,
-        targetY,
-        tileSize / 2 - 2,
-        0xffff00
-      );
+      // Try to create sprite, fallback to circle if sprites not loaded
+      try {
+        this.pacmanSprite = this.add.sprite(targetX, targetY, 'sprites', 34);
+        this.pacmanSprite.setScale(tileSize / 16); // Scale 16px sprite to tile size
+      } catch (e) {
+        // Fallback to circle if sprite doesn't exist
+        this.pacmanSprite = this.add.circle(
+          targetX,
+          targetY,
+          tileSize / 2 - 2,
+          0xffff00
+        );
+      }
       this.pacmanSprite.setDepth(1);
     }
 
@@ -259,6 +500,15 @@ class GameScene extends Phaser.Scene {
       );
       this.pacmanEmoteText.setOrigin(0.5);
       this.pacmanEmoteText.setDepth(3);
+    }
+
+    // Update animation based on direction
+    if (this.pacmanSprite.anims) {
+      const direction = pacman.direction.toLowerCase();
+      const animKey = `pacman_${direction}`;
+      if (this.anims.exists(animKey) && this.pacmanSprite.anims.currentAnim?.key !== animKey) {
+        this.pacmanSprite.play(animKey);
+      }
     }
 
     // Set target positions (interpolation happens in update())
@@ -288,38 +538,65 @@ class GameScene extends Phaser.Scene {
       let ghost = this.entities.get(player.socketId);
 
       if (!ghost) {
-        const color = player.state === 'frightened' ? 0x0000ff : colors[player.ghostType];
-        ghost = this.add.circle(
-          targetX,
-          targetY,
-          tileSize / 2 - 2,
-          color
-        );
+        // Try to create sprite, fallback to circle if sprites not loaded
+        try {
+          ghost = this.add.sprite(targetX, targetY, 'sprites', 64);
+          ghost.setScale(tileSize / 16); // Scale 16px sprite to tile size
+          ghost.ghostType = player.ghostType;
+        } catch (e) {
+          // Fallback to circle if sprite doesn't exist
+          const color = player.state === 'frightened' ? 0x0000ff : colors[player.ghostType];
+          ghost = this.add.circle(
+            targetX,
+            targetY,
+            tileSize / 2 - 2,
+            color
+          );
+        }
         ghost.setDepth(1);
 
-        // Add label for player's own ghost
-        if (player.ghostType === this.myGhostType) {
-          const label = this.add.text(
-            targetX,
-            targetY - tileSize / 2 - 3,
-            'YOU',
-            { fontSize: '8px', color: '#fff' }
-          );
-          label.setOrigin(0.5);
-          label.setDepth(2);
-          ghost.label = label;
-        }
+        // Add label showing username
+        const labelText = player.ghostType === this.myGhostType ?
+          `YOU (${player.username})` :
+          player.username;
+        const label = this.add.text(
+          targetX,
+          targetY - tileSize / 2 - 3,
+          labelText,
+          { fontSize: '8px', color: '#fff', backgroundColor: '#000', padding: { x: 2, y: 1 } }
+        );
+        label.setOrigin(0.5);
+        label.setDepth(2);
+        ghost.label = label;
 
         this.entities.set(player.socketId, ghost);
       }
 
-      // Update color based on state
-      if (player.state === 'frightened') {
-        ghost.setFillStyle(0x0000ff);
-      } else if (player.state === 'respawning') {
-        ghost.setFillStyle(0x888888);
+      // Update animation/color based on state and direction
+      if (ghost.anims) {
+        // Sprite-based ghost
+        let animKey;
+        if (player.state === 'frightened') {
+          animKey = `${player.ghostType}_scared`;
+        } else if (player.state === 'respawning') {
+          animKey = `${player.ghostType}_dead`;
+        } else {
+          const direction = player.direction.toLowerCase();
+          animKey = `${player.ghostType}_${direction}`;
+        }
+
+        if (this.anims.exists(animKey) && ghost.anims.currentAnim?.key !== animKey) {
+          ghost.play(animKey);
+        }
       } else {
-        ghost.setFillStyle(colors[player.ghostType]);
+        // Fallback circle-based ghost
+        if (player.state === 'frightened') {
+          ghost.setFillStyle(0x0000ff);
+        } else if (player.state === 'respawning') {
+          ghost.setFillStyle(0x888888);
+        } else {
+          ghost.setFillStyle(colors[player.ghostType]);
+        }
       }
 
       // Set target positions (interpolation happens in update())
@@ -404,7 +681,8 @@ class GameScene extends Phaser.Scene {
   }
 }
 
-const gameConfig = {
+// Make gameConfig globally accessible
+window.gameConfig = {
   type: Phaser.AUTO,
   width: GAME_CONSTANTS.GRID_WIDTH * GAME_CONSTANTS.TILE_SIZE,
   height: GAME_CONSTANTS.GRID_HEIGHT * GAME_CONSTANTS.TILE_SIZE,

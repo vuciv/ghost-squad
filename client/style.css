@@ -47,13 +47,93 @@ body {
   font-size: 36px;
   color: #ffff00;
   text-shadow: 3px 3px 0px #ff0000;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
+}
+
+#title-sprites {
+  margin-bottom: 10px;
+}
+
+.ghost-icon-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .subtitle {
   font-size: 12px;
   color: #aaa;
   margin-bottom: 30px;
+}
+
+.menu-section {
+  margin-bottom: 25px;
+}
+
+.input-label {
+  display: block;
+  font-size: 11px;
+  color: #0ff;
+  margin-bottom: 8px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#username-input,
+#room-code-input {
+  width: 100%;
+  padding: 15px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #111;
+  border: 3px solid #666;
+  border-radius: 5px;
+  color: #fff;
+  text-align: center;
+}
+
+#username-input:focus,
+#room-code-input:focus {
+  border-color: #0ff;
+  outline: none;
+}
+
+.divider {
+  position: relative;
+  text-align: center;
+  margin: 30px 0;
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #333;
+}
+
+.divider span {
+  position: relative;
+  background: rgba(0, 0, 0, 0.95);
+  padding: 0 15px;
+  color: #666;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.join-input-group {
+  display: flex;
+  gap: 10px;
+}
+
+.join-input-group input {
+  flex: 1;
+}
+
+.join-input-group button {
+  flex-shrink: 0;
 }
 
 .menu-buttons {
@@ -130,6 +210,58 @@ body {
   letter-spacing: 10px;
   margin: 20px 0;
   text-shadow: 2px 2px 0px #0aa;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s, color 0.2s;
+  user-select: none;
+}
+
+.room-code:hover {
+  transform: scale(1.05);
+  color: #0f0;
+}
+
+.room-code:active {
+  transform: scale(0.98);
+}
+
+.room-code::after {
+  content: '📋 Click to copy';
+  position: absolute;
+  bottom: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #666;
+  letter-spacing: normal;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.room-code:hover::after {
+  opacity: 1;
+}
+
+.room-code.copied {
+  color: #0f0;
+  animation: copyPulse 0.6s ease;
+}
+
+@keyframes copyPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.player-count {
+  font-size: 18px;
+  color: #ffff00;
+  font-weight: bold;
+  margin: 15px 0;
+  padding: 10px 20px;
+  background: rgba(255, 255, 0, 0.1);
+  border: 2px solid #ffff00;
+  border-radius: 5px;
+  display: inline-block;
 }
 
 .ghost-selection {
@@ -138,7 +270,14 @@ body {
 
 .ghost-selection h3 {
   font-size: 14px;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
+}
+
+.ghost-hint {
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 15px;
+  line-height: 1.4;
 }
 
 .ghost-grid {
@@ -157,11 +296,13 @@ body {
   border-radius: 5px;
   color: #fff;
   cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
+  transition: transform 0.2s, border-color 0.2s;
+  display: grid;
+  grid-template-rows: 32px auto 16px;
   align-items: center;
+  justify-items: center;
   gap: 10px;
+  height: 120px;
 }
 
 .ghost-btn:hover:not(:disabled) {
@@ -179,8 +320,19 @@ body {
   background: #030;
 }
 
+.ghost-btn .player-label {
+  font-size: 9px;
+  color: #0f0;
+  height: 16px;
+  display: flex;
+  align-items: center;
+}
+
 .ghost-icon {
   font-size: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
 }
 
 .players-list {

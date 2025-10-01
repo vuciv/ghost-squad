@@ -1,18 +1,22 @@
-const { MAZE_LAYOUT } = require('../shared/maze');
-const CONSTANTS = require('../shared/constants');
+import { MAZE_LAYOUT, Position } from '../shared/maze';
+import CONSTANTS = require('../shared/constants');
+
+type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 
 class AStar {
+  private maze: number[][];
+
   constructor() {
     this.maze = MAZE_LAYOUT;
   }
 
   // Manhattan distance heuristic
-  heuristic(a, b) {
+  heuristic(a: Position, b: Position): number {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   }
 
-  getNeighbors(node) {
-    const neighbors = [];
+  getNeighbors(node: Position): Position[] {
+    const neighbors: Position[] = [];
     const directions = [
       { x: 0, y: -1 }, // up
       { x: 0, y: 1 },  // down
@@ -41,22 +45,22 @@ class AStar {
     return neighbors;
   }
 
-  findPath(start, goal, ghostPositions = [], avoidGhosts = false) {
-    const openSet = [start];
-    const closedSet = new Set();
-    const cameFrom = new Map();
-    const gScore = new Map();
-    const fScore = new Map();
+  findPath(start: Position, goal: Position, ghostPositions: Position[] = [], avoidGhosts: boolean = false): Position[] {
+    const openSet: Position[] = [start];
+    const closedSet = new Set<string>();
+    const cameFrom = new Map<string, Position>();
+    const gScore = new Map<string, number>();
+    const fScore = new Map<string, number>();
 
-    const key = (node) => `${node.x},${node.y}`;
+    const key = (node: Position): string => `${node.x},${node.y}`;
 
     gScore.set(key(start), 0);
     fScore.set(key(start), this.heuristic(start, goal));
 
     while (openSet.length > 0) {
       // Find node with lowest fScore
-      openSet.sort((a, b) => fScore.get(key(a)) - fScore.get(key(b)));
-      const current = openSet.shift();
+      openSet.sort((a, b) => (fScore.get(key(a)) || Infinity) - (fScore.get(key(b)) || Infinity));
+      const current = openSet.shift()!;
 
       // Reached goal
       if (current.x === goal.x && current.y === goal.y) {
@@ -72,7 +76,7 @@ class AStar {
           continue;
         }
 
-        let tentativeGScore = gScore.get(key(current)) + 1;
+        let tentativeGScore = (gScore.get(key(current)) || 0) + 1;
 
         // Add cost for being near ghosts if in evasion mode
         if (avoidGhosts && ghostPositions.length > 0) {
@@ -86,7 +90,7 @@ class AStar {
 
         if (!openSet.find(n => n.x === neighbor.x && n.y === neighbor.y)) {
           openSet.push(neighbor);
-        } else if (tentativeGScore >= gScore.get(neighborKey)) {
+        } else if (tentativeGScore >= (gScore.get(neighborKey) || Infinity)) {
           continue;
         }
 
@@ -100,19 +104,19 @@ class AStar {
     return [];
   }
 
-  reconstructPath(cameFrom, current) {
-    const path = [current];
-    const key = (node) => `${node.x},${node.y}`;
+  reconstructPath(cameFrom: Map<string, Position>, current: Position): Position[] {
+    const path: Position[] = [current];
+    const key = (node: Position): string => `${node.x},${node.y}`;
 
     while (cameFrom.has(key(current))) {
-      current = cameFrom.get(key(current));
+      current = cameFrom.get(key(current))!;
       path.unshift(current);
     }
 
     return path;
   }
 
-  getNextDirection(start, goal, ghostPositions = [], avoidGhosts = false) {
+  getNextDirection(start: Position, goal: Position, ghostPositions: Position[] = [], avoidGhosts: boolean = false): Direction | null {
     const path = this.findPath(start, goal, ghostPositions, avoidGhosts);
 
     if (path.length < 2) {
@@ -132,4 +136,4 @@ class AStar {
   }
 }
 
-module.exports = AStar;
+export = AStar;
