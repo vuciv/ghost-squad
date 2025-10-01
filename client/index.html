@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghost Squad - Multiplayer Pacman</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="ui-container">
+    <!-- Main Menu -->
+    <div id="main-menu" class="menu-screen active">
+      <h1 class="title">👻 GHOST SQUAD</h1>
+      <p class="subtitle">Hunt the AI Pacman!</p>
+      <div class="menu-buttons">
+        <button id="create-room-btn" class="btn btn-primary">Create Game</button>
+        <button id="join-room-btn" class="btn btn-secondary">Join Game</button>
+      </div>
+      <div id="join-input" class="hidden">
+        <input type="text" id="room-code-input" placeholder="Enter 4-character code" maxlength="4">
+        <button id="join-submit-btn" class="btn btn-primary">Join</button>
+      </div>
+    </div>
+
+    <!-- Lobby Screen -->
+    <div id="lobby-screen" class="menu-screen">
+      <h2>Game Lobby</h2>
+      <div id="room-code-display" class="room-code"></div>
+      <p class="subtitle">Share this code with friends!</p>
+
+      <div class="ghost-selection">
+        <h3>Select Your Ghost:</h3>
+        <div class="ghost-grid">
+          <button class="ghost-btn" data-ghost="blinky">
+            <span class="ghost-icon" style="color: #ff0000;">👻</span>
+            <span>Blinky</span>
+          </button>
+          <button class="ghost-btn" data-ghost="pinky">
+            <span class="ghost-icon" style="color: #ffb8ff;">👻</span>
+            <span>Pinky</span>
+          </button>
+          <button class="ghost-btn" data-ghost="inky">
+            <span class="ghost-icon" style="color: #00ffff;">👻</span>
+            <span>Inky</span>
+          </button>
+          <button class="ghost-btn" data-ghost="clyde">
+            <span class="ghost-icon" style="color: #ffb852;">👻</span>
+            <span>Clyde</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="players-list" class="players-list"></div>
+      <button id="start-game-btn" class="btn btn-primary" disabled>Start Game</button>
+    </div>
+
+    <!-- HUD (shown during game) -->
+    <div id="hud" class="hidden">
+      <div class="hud-item">
+        <span class="hud-label">Score:</span>
+        <span id="score-display">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Captures:</span>
+        <span id="captures-display">0 / 3</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Dots:</span>
+        <span id="dots-display">0</span>
+      </div>
+      <div id="mode-indicator" class="mode-indicator"></div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="menu-screen">
+      <h2 id="game-over-title">Game Over</h2>
+      <p id="game-over-message"></p>
+      <div class="score-display">
+        <span class="hud-label">Final Score:</span>
+        <span id="final-score">0</span>
+      </div>
+      <button id="back-to-menu-btn" class="btn btn-primary">Back to Menu</button>
+    </div>
+  </div>
+
+  <div id="game-container"></div>
+
+  <script src="/shared/constants.js"></script>
+  <script src="/shared/maze.js"></script>
+  <script src="game.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

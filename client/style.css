@@ -1,0 +1,266 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+}
+
+#ui-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#ui-container > * {
+  pointer-events: auto;
+}
+
+.menu-screen {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.95);
+  border: 4px solid #00f;
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  min-width: 400px;
+  display: none;
+}
+
+.menu-screen.active {
+  display: block;
+}
+
+.title {
+  font-size: 36px;
+  color: #ffff00;
+  text-shadow: 3px 3px 0px #ff0000;
+  margin-bottom: 20px;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 30px;
+}
+
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 15px 30px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 3px solid #fff;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+
+.btn-primary {
+  background: #00f;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #00a;
+  transform: scale(1.05);
+}
+
+.btn-primary:disabled {
+  background: #333;
+  color: #666;
+  border-color: #666;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #f00;
+  color: #fff;
+}
+
+.btn-secondary:hover {
+  background: #a00;
+  transform: scale(1.05);
+}
+
+.hidden {
+  display: none !important;
+}
+
+#join-input {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+#room-code-input {
+  flex: 1;
+  padding: 15px;
+  font-size: 18px;
+  font-family: inherit;
+  background: #111;
+  border: 3px solid #fff;
+  border-radius: 5px;
+  color: #fff;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.room-code {
+  font-size: 48px;
+  color: #0ff;
+  letter-spacing: 10px;
+  margin: 20px 0;
+  text-shadow: 2px 2px 0px #0aa;
+}
+
+.ghost-selection {
+  margin: 30px 0;
+}
+
+.ghost-selection h3 {
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.ghost-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.ghost-btn {
+  padding: 20px;
+  font-family: inherit;
+  font-size: 12px;
+  background: #111;
+  border: 3px solid #666;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.ghost-btn:hover:not(:disabled) {
+  border-color: #fff;
+  transform: scale(1.05);
+}
+
+.ghost-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ghost-btn.selected {
+  border-color: #0f0;
+  background: #030;
+}
+
+.ghost-icon {
+  font-size: 32px;
+}
+
+.players-list {
+  background: #111;
+  border: 2px solid #333;
+  border-radius: 5px;
+  padding: 15px;
+  margin: 20px 0;
+  min-height: 100px;
+  text-align: left;
+  font-size: 10px;
+}
+
+.player-item {
+  padding: 8px;
+  margin: 5px 0;
+  background: #222;
+  border-radius: 3px;
+}
+
+#hud {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 3px solid #00f;
+  border-radius: 5px;
+  padding: 15px;
+  font-size: 12px;
+}
+
+.hud-item {
+  margin: 8px 0;
+}
+
+.hud-label {
+  color: #0ff;
+  margin-right: 10px;
+}
+
+.mode-indicator {
+  margin-top: 15px;
+  padding: 10px;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.mode-indicator.frightened {
+  background: #00f;
+  color: #fff;
+  animation: blink 0.5s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.5; }
+}
+
+#game-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+}
+
+.score-display {
+  font-size: 24px;
+  margin: 30px 0;
+}
+
+#game-over-title {
+  font-size: 28px;
+  margin-bottom: 20px;
+}
+
+#game-over-message {
+  font-size: 14px;
+  margin-bottom: 20px;
+  color: #0ff;
+}
