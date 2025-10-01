@@ -4,7 +4,7 @@
   "description": "Multiplayer Pacman where players control ghosts hunting AI Pacman",
   "main": "dist/server/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r client dist/client && cp -r shared dist/shared",
     "start": "npm run build && node dist/server/index.js",
     "dev": "ts-node server/index.ts",
     "server": "npm run dev"
