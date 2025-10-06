@@ -1,3 +1,38 @@
+// Maze layout for client-side collision detection
+const CLIENT_MAZE = [
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,2,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,2,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
+  [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,3,3,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
+  [1,1,1,1,1,1,1,1,1,1,0,3,3,3,3,3,3,0,1,1,1,1,1,1,1,1,1,1],
+  [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,2,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,2,0],
+  [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
+  [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
+  [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
+  [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+];
+
 // Phaser game configuration and scene
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -7,6 +42,20 @@ class GameScene extends Phaser.Scene {
     this.myGhostType = null;
     this.entities = new Map();
     this.lastUpdateTime = 0;
+
+    // Client-side prediction for player
+    this.lastServerPosition = null;
+    this.predictedPosition = null;
+    this.currentDirection = null;
+    this.lastInputTime = 0;
+
+    // Client-side prediction for Pacman
+    this.pacmanLastServerPosition = null;
+    this.pacmanPredictedPosition = null;
+    this.pacmanDirection = null;
+
+    // Client-side prediction for remote ghosts
+    this.remotePredictions = new Map(); // socketId -> {predicted, server, direction}
   }
 
   init(data) {
@@ -48,7 +97,7 @@ class GameScene extends Phaser.Scene {
       right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
     };
 
-    // Handle input
+    // Handle input with client-side prediction
     this.input.keyboard.on('keydown', (event) => {
       let direction = null;
 
@@ -63,9 +112,14 @@ class GameScene extends Phaser.Scene {
       }
 
       if (direction) {
+        // Update current direction for prediction
+        this.currentDirection = direction;
+        this.lastInputTime = Date.now();
+
+        // Send to server
         this.socket.emit('playerInput', {
           roomCode: this.roomCode,
-          direction
+          direction: direction
         });
       }
     });
@@ -249,28 +303,28 @@ class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'blinky_right',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [192, 193] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'blinky_left',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [194, 195] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'blinky_up',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [196, 197] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'blinky_down',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [198, 199] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
@@ -278,28 +332,28 @@ class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'pinky_right',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [233, 234] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pinky_left',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [235, 236] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pinky_up',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [237, 238] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pinky_down',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [239, 240] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
@@ -307,28 +361,28 @@ class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'inky_right',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [274, 275] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'inky_left',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [276, 277] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'inky_up',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [278, 279] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'inky_down',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [280, 281] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
@@ -336,28 +390,28 @@ class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'clyde_right',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [315, 316] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'clyde_left',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [317, 318] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'clyde_up',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [319, 320] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'clyde_down',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [321, 322] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
@@ -367,7 +421,7 @@ class GameScene extends Phaser.Scene {
       this.anims.create({
         key: `${ghost}_scared`,
         frames: this.anims.generateFrameNumbers('sprites', { frames: [200, 201] }),
-        frameRate: 5,
+        frameRate: 8,
         repeat: -1
       });
     });
@@ -386,28 +440,28 @@ class GameScene extends Phaser.Scene {
     this.anims.create({
       key: 'pacman_right',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [28, 29] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pacman_left',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [69, 70] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pacman_up',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [110, 111] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
 
     this.anims.create({
       key: 'pacman_down',
       frames: this.anims.generateFrameNumbers('sprites', { frames: [151, 152] }),
-      frameRate: 10,
+      frameRate: 12,
       repeat: -1
     });
   }
@@ -470,19 +524,21 @@ class GameScene extends Phaser.Scene {
 
   updatePacman(pacman) {
     const tileSize = GAME_CONSTANTS.TILE_SIZE;
-    const targetX = pacman.position.x * tileSize + tileSize / 2;
-    const targetY = pacman.position.y * tileSize + tileSize / 2;
+    const serverX = pacman.position.x * tileSize + tileSize / 2;
+    const serverY = pacman.position.y * tileSize + tileSize / 2;
+
+    const isNewPacman = !this.pacmanSprite;
 
     if (!this.pacmanSprite) {
       // Try to create sprite, fallback to circle if sprites not loaded
       try {
-        this.pacmanSprite = this.add.sprite(targetX, targetY, 'sprites', 34);
+        this.pacmanSprite = this.add.sprite(serverX, serverY, 'sprites', 34);
         this.pacmanSprite.setScale(tileSize / 16); // Scale 16px sprite to tile size
       } catch (e) {
         // Fallback to circle if sprite doesn't exist
         this.pacmanSprite = this.add.circle(
-          targetX,
-          targetY,
+          serverX,
+          serverY,
           tileSize / 2 - 2,
           0xffff00
         );
@@ -493,13 +549,22 @@ class GameScene extends Phaser.Scene {
     // Create emote text if it doesn't exist
     if (!this.pacmanEmoteText) {
       this.pacmanEmoteText = this.add.text(
-        targetX,
-        targetY - tileSize / 2 - 5,
+        serverX,
+        serverY - tileSize / 2 - 5,
         '',
         { fontSize: '20px', fontFamily: 'Arial' }
       );
       this.pacmanEmoteText.setOrigin(0.5);
       this.pacmanEmoteText.setDepth(3);
+    }
+
+    // Store server position and direction for prediction
+    this.pacmanLastServerPosition = { x: pacman.position.x, y: pacman.position.y };
+    this.pacmanDirection = pacman.direction;
+
+    // Initialize predicted position if needed
+    if (!this.pacmanPredictedPosition) {
+      this.pacmanPredictedPosition = { x: pacman.position.x, y: pacman.position.y };
     }
 
     // Update animation based on direction
@@ -511,11 +576,18 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Set target positions (interpolation happens in update())
-    this.pacmanSprite.targetX = targetX;
-    this.pacmanSprite.targetY = targetY;
-    this.pacmanEmoteText.targetX = targetX;
-    this.pacmanEmoteText.targetY = targetY - tileSize / 2 - 5;
+    // Use predicted position for target (same as player ghost)
+    this.pacmanSprite.targetX = this.pacmanPredictedPosition.x * tileSize + tileSize / 2;
+    this.pacmanSprite.targetY = this.pacmanPredictedPosition.y * tileSize + tileSize / 2;
+
+    // Prevent jump on first frame
+    if (isNewPacman) {
+      this.pacmanSprite.x = this.pacmanSprite.targetX;
+      this.pacmanSprite.y = this.pacmanSprite.targetY;
+    }
+
+    this.pacmanEmoteText.targetX = this.pacmanSprite.targetX;
+    this.pacmanEmoteText.targetY = this.pacmanSprite.targetY - tileSize / 2 - 5;
 
     // Update emote text
     if (pacman.emote !== undefined) {
@@ -533,22 +605,25 @@ class GameScene extends Phaser.Scene {
     };
 
     players.forEach(player => {
-      const targetX = player.position.x * tileSize + tileSize / 2;
-      const targetY = player.position.y * tileSize + tileSize / 2;
+      const serverX = player.position.x * tileSize + tileSize / 2;
+      const serverY = player.position.y * tileSize + tileSize / 2;
       let ghost = this.entities.get(player.socketId);
+
+      // Check if this is the local player's ghost
+      const isLocalPlayer = (player.socketId === this.socket.id);
 
       if (!ghost) {
         // Try to create sprite, fallback to circle if sprites not loaded
         try {
-          ghost = this.add.sprite(targetX, targetY, 'sprites', 64);
+          ghost = this.add.sprite(serverX, serverY, 'sprites', 64);
           ghost.setScale(tileSize / 16); // Scale 16px sprite to tile size
           ghost.ghostType = player.ghostType;
         } catch (e) {
           // Fallback to circle if sprite doesn't exist
           const color = player.state === 'frightened' ? 0x0000ff : colors[player.ghostType];
           ghost = this.add.circle(
-            targetX,
-            targetY,
+            serverX,
+            serverY,
             tileSize / 2 - 2,
             color
           );
@@ -560,8 +635,8 @@ class GameScene extends Phaser.Scene {
           `YOU (${player.username})` :
           player.username;
         const label = this.add.text(
-          targetX,
-          targetY - tileSize / 2 - 3,
+          serverX,
+          serverY - tileSize / 2 - 3,
           labelText,
           { fontSize: '8px', color: '#fff', backgroundColor: '#000', padding: { x: 2, y: 1 } }
         );
@@ -599,14 +674,56 @@ class GameScene extends Phaser.Scene {
         }
       }
 
-      // Set target positions (interpolation happens in update())
-      ghost.targetX = targetX;
-      ghost.targetY = targetY;
+      // Store server position and direction, use prediction for all ghosts
+      const isNewGhost = !this.entities.has(player.socketId) || !ghost.targetX;
 
-      // Update label target position
+      if (isLocalPlayer) {
+        // Store server position for local player
+        this.lastServerPosition = { x: player.position.x, y: player.position.y };
+
+        // If we have no predicted position, initialize it
+        if (!this.predictedPosition) {
+          this.predictedPosition = { x: player.position.x, y: player.position.y };
+        }
+
+        // Use predicted position directly for target
+        ghost.targetX = this.predictedPosition.x * tileSize + tileSize / 2;
+        ghost.targetY = this.predictedPosition.y * tileSize + tileSize / 2;
+
+        // Prevent jump on first frame by setting sprite position to target
+        if (isNewGhost) {
+          ghost.x = ghost.targetX;
+          ghost.y = ghost.targetY;
+        }
+      } else {
+        // Remote players: use prediction too for smooth movement
+        if (!this.remotePredictions.has(player.socketId)) {
+          this.remotePredictions.set(player.socketId, {
+            predicted: { x: player.position.x, y: player.position.y },
+            server: { x: player.position.x, y: player.position.y },
+            direction: player.direction
+          });
+        }
+
+        const remotePred = this.remotePredictions.get(player.socketId);
+        remotePred.server = { x: player.position.x, y: player.position.y };
+        remotePred.direction = player.direction;
+
+        // Use predicted position for target
+        ghost.targetX = remotePred.predicted.x * tileSize + tileSize / 2;
+        ghost.targetY = remotePred.predicted.y * tileSize + tileSize / 2;
+
+        // Prevent jump on first frame by setting sprite position to target
+        if (isNewGhost) {
+          ghost.x = ghost.targetX;
+          ghost.y = ghost.targetY;
+        }
+      }
+
+      // Update label targets for all ghosts
       if (ghost.label) {
-        ghost.label.targetX = targetX;
-        ghost.label.targetY = targetY - tileSize / 2 - 3;
+        ghost.label.targetX = ghost.targetX;
+        ghost.label.targetY = ghost.targetY - tileSize / 2 - 3;
       }
     });
   }
@@ -623,49 +740,108 @@ class GameScene extends Phaser.Scene {
     document.getElementById('final-score').textContent = data.score;
   }
 
+  isWalkable(x, y) {
+    const tileX = Math.round(x);
+    const tileY = Math.round(y);
+
+    if (tileY < 0 || tileY >= CLIENT_MAZE.length || tileX < 0 || tileX >= CLIENT_MAZE[0].length) {
+      return false;
+    }
+
+    const cell = CLIENT_MAZE[tileY][tileX];
+    return cell !== 0; // Walkable if not a wall
+  }
+
+
   update(time, delta) {
-    // Move at (slightly faster than) the server's tile rate so interpolation stays smooth
-    const speed = this.moveSpeed || this.computeMoveSpeed();
-    const moveDistance = speed * (delta / 1000); // Distance to move this frame
+    const deltaSeconds = delta / 1000;
 
-    // Combine all sprites that need moving into one array
-    const allSprites = [this.pacmanSprite, ...this.entities.values()];
+    // Server speed: 1 tile per 150ms = 6.67 tiles/sec
+    const tilesPerSecond = 1000 / 150;
+    const predictionSpeed = tilesPerSecond * deltaSeconds;
 
-    allSprites.forEach(sprite => {
-      // Guard against missing sprites or targets
-      if (!sprite || typeof sprite.targetX === 'undefined') {
-        return;
+    // Very gentle reconciliation to avoid inch-worm effect
+    const reconciliationStrength = 0.05;
+
+    // Update predicted position for player ghost
+    if (this.currentDirection && this.lastServerPosition && this.predictedPosition) {
+      const dir = GAME_CONSTANTS.DIRECTIONS[this.currentDirection];
+      if (dir) {
+        const nextX = this.predictedPosition.x + dir.x * predictionSpeed;
+        const nextY = this.predictedPosition.y + dir.y * predictionSpeed;
+
+        if (this.isWalkable(nextX, nextY)) {
+          this.predictedPosition.x = nextX;
+          this.predictedPosition.y = nextY;
+        }
+
+        this.predictedPosition.x += (this.lastServerPosition.x - this.predictedPosition.x) * reconciliationStrength;
+        this.predictedPosition.y += (this.lastServerPosition.y - this.predictedPosition.y) * reconciliationStrength;
       }
+    }
 
-      const distance = Phaser.Math.Distance.Between(sprite.x, sprite.y, sprite.targetX, sprite.targetY);
+    // Update predicted position for Pacman
+    if (this.pacmanDirection && this.pacmanLastServerPosition && this.pacmanPredictedPosition) {
+      const dir = GAME_CONSTANTS.DIRECTIONS[this.pacmanDirection];
+      if (dir) {
+        const nextX = this.pacmanPredictedPosition.x + dir.x * predictionSpeed;
+        const nextY = this.pacmanPredictedPosition.y + dir.y * predictionSpeed;
 
-      // If we're close enough, just snap to the final position
-      if (distance < 4) { // Using a small threshold to prevent jittering
-        sprite.x = sprite.targetX;
-        sprite.y = sprite.targetY;
-      } else if (distance > 0) {
-        // Move towards the target at a constant speed
-        const vec = new Phaser.Math.Vector2(sprite.targetX - sprite.x, sprite.targetY - sprite.y).normalize();
-        sprite.x += vec.x * moveDistance;
-        sprite.y += vec.y * moveDistance;
+        if (this.isWalkable(nextX, nextY)) {
+          this.pacmanPredictedPosition.x = nextX;
+          this.pacmanPredictedPosition.y = nextY;
+        }
+
+        this.pacmanPredictedPosition.x += (this.pacmanLastServerPosition.x - this.pacmanPredictedPosition.x) * reconciliationStrength;
+        this.pacmanPredictedPosition.y += (this.pacmanLastServerPosition.y - this.pacmanPredictedPosition.y) * reconciliationStrength;
       }
+    }
 
-      // --- Update attached text labels ---
-      // Find the correct label for the current sprite
-      let label = null;
-      if (sprite === this.pacmanSprite) {
-        label = this.pacmanEmoteText;
-      } else if (sprite.label) {
-        label = sprite.label;
-      }
+    // Update predicted positions for remote ghosts
+    for (const [socketId, pred] of this.remotePredictions.entries()) {
+      if (pred.direction && pred.server && pred.predicted) {
+        const dir = GAME_CONSTANTS.DIRECTIONS[pred.direction];
+        if (dir) {
+          const nextX = pred.predicted.x + dir.x * predictionSpeed;
+          const nextY = pred.predicted.y + dir.y * predictionSpeed;
 
-      // Keep the label positioned relative to its parent sprite
-      if (label) {
-        let yOffset = (sprite === this.pacmanSprite) ? -18 : -11; // Different offsets
-        label.x = sprite.x;
-        label.y = sprite.y + yOffset;
+          if (this.isWalkable(nextX, nextY)) {
+            pred.predicted.x = nextX;
+            pred.predicted.y = nextY;
+          }
+
+          pred.predicted.x += (pred.server.x - pred.predicted.x) * reconciliationStrength;
+          pred.predicted.y += (pred.server.y - pred.predicted.y) * reconciliationStrength;
+        }
       }
-    });
+    }
+
+    // Smooth interpolation - higher lerp for fluid movement
+    const lerpFactor = 0.3; // More aggressive for smoothness
+
+    // Update Pacman sprite
+    if (this.pacmanSprite && typeof this.pacmanSprite.targetX !== 'undefined') {
+      this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * lerpFactor;
+      this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * lerpFactor;
+
+      if (this.pacmanEmoteText) {
+        this.pacmanEmoteText.x = this.pacmanSprite.x;
+        this.pacmanEmoteText.y = this.pacmanSprite.y - 18;
+      }
+    }
+
+    // Update ghost sprites
+    for (const sprite of this.entities.values()) {
+      if (sprite && typeof sprite.targetX !== 'undefined') {
+        sprite.x += (sprite.targetX - sprite.x) * lerpFactor;
+        sprite.y += (sprite.targetY - sprite.y) * lerpFactor;
+
+        if (sprite.label) {
+          sprite.label.x = sprite.x;
+          sprite.label.y = sprite.y - 11;
+        }
+      }
+    }
   }
 
   computeMoveSpeed() {
@@ -677,7 +853,7 @@ class GameScene extends Phaser.Scene {
     }
 
     const basePixelsPerSecond = GAME_CONSTANTS.TILE_SIZE / (msPerMove / 1000);
-    return basePixelsPerSecond * 1.05; // slight lead lets client catch up smoothly
+    return basePixelsPerSecond * 1.2; // Smooth interpolation speed
   }
 }
 

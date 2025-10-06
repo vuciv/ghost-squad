@@ -1,180 +1,57 @@
 import AStar = require('./AStar');
-import { MAZE_LAYOUT, Position } from '../shared/maze';
-import CONSTANTS = require('../shared/constants');
+import { Position } from '../shared/maze';
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
-type AIState = 'DOT_SEEKING' | 'EVASION' | 'AGGRESSIVE';
 
 class PacmanAI {
   private position: Position;
   private direction: Direction;
   private pathfinder: AStar;
-  private state: AIState;
-  private target: Position | null;
-  private updateInterval: number;
-  private lastUpdate: number;
+  private positionHistory: Position[];
 
   constructor(position: Position) {
     this.position = { ...position };
     this.direction = 'RIGHT';
     this.pathfinder = new AStar();
-    this.state = 'DOT_SEEKING';
-    this.target = null;
-    this.updateInterval = 200; // Update path every 200ms
-    this.lastUpdate = Date.now();
+    this.positionHistory = [];
   }
 
   update(dots: Position[], powerPellets: Position[], ghostPositions: Position[], isFrightened: boolean): Direction {
-    const now = Date.now();
-
     // Use integer positions for pathfinding
-    const intPos: Position = { x: Math.floor(this.position.x), y: Math.floor(this.position.y) };
+    const intPos: Position = { 
+      x: Math.floor(this.position.x), 
+      y: Math.floor(this.position.y) 
+    };
+    
     const intGhostPositions: Position[] = ghostPositions.map(g => ({
       x: Math.floor(g.x),
       y: Math.floor(g.y)
     }));
 
-    // Determine state
-    if (isFrightened) {
-      this.state = 'AGGRESSIVE';
-    } else {
-      // Check if any ghost is nearby
-      const nearbyGhost = intGhostPositions.some(ghost => {
-        const distance = Math.abs(ghost.x - intPos.x) + Math.abs(ghost.y - intPos.y);
-        return distance < 8; // Within 8 tiles - increased from 6
-      });
-      this.state = nearbyGhost ? 'EVASION' : 'DOT_SEEKING';
+    // Track position history to avoid loops
+    this.positionHistory.push({ ...intPos });
+    if (this.positionHistory.length > 15) {
+      this.positionHistory.shift();
     }
 
-    // Update path periodically
-    if (now - this.lastUpdate > this.updateInterval) {
-      this.updateTarget(dots, powerPellets, intGhostPositions);
-      this.lastUpdate = now;
-    }
+    // Use weighted A* to find the best direction considering all factors
+    const bestDirection = this.pathfinder.findBestDirection(
+      intPos,
+      dots,
+      powerPellets,
+      intGhostPositions,
+      isFrightened,
+      this.positionHistory
+    );
 
-    // Get next direction
-    if (this.target) {
-      const avoidGhosts = this.state === 'EVASION';
-      const nextDir = this.pathfinder.getNextDirection(
-        intPos,
-        this.target,
-        avoidGhosts ? intGhostPositions : [],
-        avoidGhosts
-      );
-
-      if (nextDir) {
-        this.direction = nextDir;
-      } else {
-        // If no path found, try to move in any valid direction
-        this.direction = this.findAnyValidDirection(intPos);
-      }
-    } else {
-      // No target, try to move in current direction or find any valid direction
-      if (!this.canMoveInDirection(intPos, this.direction)) {
-        this.direction = this.findAnyValidDirection(intPos);
-      }
+    if (bestDirection) {
+      this.direction = bestDirection;
     }
+    // If no valid direction found, keep current direction
 
     return this.direction;
   }
 
-  private updateTarget(dots: Position[], powerPellets: Position[], ghostPositions: Position[]): void {
-    if (this.state === 'AGGRESSIVE' && ghostPositions.length > 0) {
-      // Target nearest ghost
-      this.target = this.findClosest(this.position, ghostPositions);
-    } else if (this.state === 'EVASION') {
-      // Try to get power pellet if available
-      if (powerPellets.length > 0) {
-        this.target = this.findClosest(this.position, powerPellets);
-      } else {
-        // Otherwise, target dots far from ghosts
-        this.target = this.findSafestDotCluster(dots, ghostPositions);
-      }
-    } else {
-      // DOT_SEEKING: Target nearest dot cluster
-      this.target = this.findNearestDotCluster(dots);
-    }
-  }
-
-  private findClosest(from: Position, positions: Position[]): Position | null {
-    if (positions.length === 0) return null;
-
-    let closest = positions[0];
-    let minDist = this.manhattanDistance(from, closest);
-
-    for (const pos of positions) {
-      const dist = this.manhattanDistance(from, pos);
-      if (dist < minDist) {
-        minDist = dist;
-        closest = pos;
-      }
-    }
-
-    return closest;
-  }
-
-  private findNearestDotCluster(dots: Position[]): Position | null {
-    if (dots.length === 0) return null;
-
-    // Find the densest area of dots
-    const clusters = this.clusterDots(dots);
-    if (clusters.length === 0) return dots[0];
-
-    return this.findClosest(this.position, clusters);
-  }
-
-  private findSafestDotCluster(dots: Position[], ghostPositions: Position[]): Position | null {
-    if (dots.length === 0) return null;
-
-    const clusters = this.clusterDots(dots);
-    if (clusters.length === 0) return dots[0];
-
-    // Find cluster furthest from ghosts
-    let safest = clusters[0];
-    let maxSafety = 0;
-
-    for (const cluster of clusters) {
-      let minGhostDist = Infinity;
-      for (const ghost of ghostPositions) {
-        const dist = this.manhattanDistance(cluster, ghost);
-        minGhostDist = Math.min(minGhostDist, dist);
-      }
-      if (minGhostDist > maxSafety) {
-        maxSafety = minGhostDist;
-        safest = cluster;
-      }
-    }
-
-    return safest;
-  }
-
-  private clusterDots(dots: Position[]): Position[] {
-    // Simple clustering: find areas with high dot density
-    const clusters: Position[] = [];
-    const radius = 5;
-
-    for (let y = 0; y < CONSTANTS.GRID_HEIGHT; y += radius) {
-      for (let x = 0; x < CONSTANTS.GRID_WIDTH; x += radius) {
-        const dotsInArea = dots.filter(dot =>
-          dot.x >= x && dot.x < x + radius &&
-          dot.y >= y && dot.y < y + radius
-        );
-
-        if (dotsInArea.length > 3) {
-          // Calculate center of cluster
-          const centerX = Math.floor(dotsInArea.reduce((sum, d) => sum + d.x, 0) / dotsInArea.length);
-          const centerY = Math.floor(dotsInArea.reduce((sum, d) => sum + d.y, 0) / dotsInArea.length);
-          clusters.push({ x: centerX, y: centerY });
-        }
-      }
-    }
-
-    return clusters;
-  }
-
-  private manhattanDistance(a: Position, b: Position): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  }
 
   setPosition(x: number, y: number): void {
     this.position.x = x;
@@ -186,44 +63,6 @@ class PacmanAI {
   }
 
   getDirection(): Direction {
-    return this.direction;
-  }
-
-  getState(): AIState {
-    return this.state;
-  }
-
-  private canMoveInDirection(pos: Position, direction: Direction): boolean {
-    const dir = CONSTANTS.DIRECTIONS[direction];
-    if (!dir) return false;
-
-    const newX = pos.x + dir.x;
-    const newY = pos.y + dir.y;
-
-    if (newX < 0 || newX >= CONSTANTS.GRID_WIDTH ||
-        newY < 0 || newY >= CONSTANTS.GRID_HEIGHT) {
-      return false;
-    }
-
-    return MAZE_LAYOUT[newY][newX] !== 0;
-  }
-
-  private findAnyValidDirection(pos: Position): Direction {
-    const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
-
-    // Try to continue in current direction first
-    if (this.canMoveInDirection(pos, this.direction)) {
-      return this.direction;
-    }
-
-    // Try other directions
-    for (const dir of directions) {
-      if (this.canMoveInDirection(pos, dir)) {
-        return dir;
-      }
-    }
-
-    // Fallback
     return this.direction;
   }
 }

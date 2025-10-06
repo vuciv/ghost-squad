@@ -3,6 +3,14 @@ import CONSTANTS = require('../shared/constants');
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 
+interface CostWeights {
+  dotValue: number;          // How much we want dots
+  powerPelletValue: number;  // How much we want power pellets
+  ghostDanger: number;       // How much we avoid ghosts (negative cost)
+  ghostTarget: number;       // How much we chase ghosts when frightened
+  explorationBonus: number;  // Bonus for exploring new areas
+}
+
 class AStar {
   private maze: number[][];
 
@@ -57,7 +65,13 @@ class AStar {
     gScore.set(key(start), 0);
     fScore.set(key(start), this.heuristic(start, goal));
 
-    while (openSet.length > 0) {
+    // Limit iterations to prevent infinite loops
+    let iterations = 0;
+    const maxIterations = 1000;
+
+    while (openSet.length > 0 && iterations < maxIterations) {
+      iterations++;
+
       // Find node with lowest fScore
       openSet.sort((a, b) => (fScore.get(key(a)) || Infinity) - (fScore.get(key(b)) || Infinity));
       const current = openSet.shift()!;
@@ -82,8 +96,9 @@ class AStar {
         if (avoidGhosts && ghostPositions.length > 0) {
           for (const ghost of ghostPositions) {
             const distance = this.heuristic(neighbor, ghost);
-            if (distance < 7) {
-              tentativeGScore += (7 - distance) * 20; // Higher cost when closer to ghosts
+            // Only avoid if very close (reduced from 7 to 4)
+            if (distance < 4) {
+              tentativeGScore += (4 - distance) * 15; // Reduced penalty
             }
           }
         }
@@ -133,6 +148,133 @@ class AStar {
     if (dx === 1) return 'RIGHT';
 
     return null;
+  }
+
+  // Calculate the cost of a position based on game state
+  calculatePositionCost(
+    pos: Position,
+    dots: Position[],
+    powerPellets: Position[],
+    ghostPositions: Position[],
+    weights: CostWeights,
+    visited: Set<string>
+  ): number {
+    let cost = 0;
+
+    // Base movement cost
+    cost += 1;
+
+    // Dot attraction - negative cost (we want to go towards dots)
+    let minDotDist = Infinity;
+    for (const dot of dots) {
+      const dist = this.heuristic(pos, dot);
+      minDotDist = Math.min(minDotDist, dist);
+    }
+    if (minDotDist < Infinity) {
+      cost -= weights.dotValue / (minDotDist + 1);
+    }
+
+    // Power pellet attraction - strong negative cost
+    let minPelletDist = Infinity;
+    for (const pellet of powerPellets) {
+      const dist = this.heuristic(pos, pellet);
+      minPelletDist = Math.min(minPelletDist, dist);
+    }
+    if (minPelletDist < Infinity) {
+      cost -= weights.powerPelletValue / (minPelletDist + 1);
+    }
+
+    // Ghost interaction
+    for (const ghost of ghostPositions) {
+      const dist = this.heuristic(pos, ghost);
+      
+      if (weights.ghostTarget > 0) {
+        // Frightened mode - chase ghosts
+        if (dist < 10) {
+          cost -= weights.ghostTarget / (dist + 1);
+        }
+      } else {
+        // Normal mode - avoid ghosts
+        if (dist < 8) {
+          cost += weights.ghostDanger / (dist + 1);
+        }
+      }
+    }
+
+    // Exploration bonus - prefer unvisited areas
+    const key = `${pos.x},${pos.y}`;
+    if (visited.has(key)) {
+      cost += 5; // Penalty for revisiting
+    }
+
+    return cost;
+  }
+
+  // Find best direction using weighted A* that considers all game elements
+  findBestDirection(
+    start: Position,
+    dots: Position[],
+    powerPellets: Position[],
+    ghostPositions: Position[],
+    isFrightened: boolean,
+    recentPositions: Position[]
+  ): Direction | null {
+    // Set weights based on game state
+    const weights: CostWeights = isFrightened
+      ? {
+          dotValue: 3,           // Still care about dots
+          powerPelletValue: 2,   // Power pellets less important now
+          ghostDanger: 0,        // Don't avoid ghosts
+          ghostTarget: 8,        // Chase ghosts!
+          explorationBonus: 1
+        }
+      : {
+          dotValue: 5,           // Primary goal: collect dots
+          powerPelletValue: 8,   // Power pellets very valuable
+          ghostDanger: 15,       // Avoid ghosts moderately
+          ghostTarget: 0,        // Don't chase ghosts
+          explorationBonus: 1
+        };
+
+    // Track visited positions to avoid loops
+    const visited = new Set(recentPositions.map(p => `${p.x},${p.y}`));
+
+    // Evaluate each possible direction
+    const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+    let bestDirection: Direction | null = null;
+    let bestCost = Infinity;
+
+    for (const dir of directions) {
+      const dirVec = CONSTANTS.DIRECTIONS[dir];
+      const newPos = {
+        x: start.x + dirVec.x,
+        y: start.y + dirVec.y
+      };
+
+      // Check if walkable
+      if (newPos.x < 0 || newPos.x >= CONSTANTS.GRID_WIDTH ||
+          newPos.y < 0 || newPos.y >= CONSTANTS.GRID_HEIGHT ||
+          this.maze[newPos.y][newPos.x] === 0) {
+        continue;
+      }
+
+      // Calculate cost for this move
+      const cost = this.calculatePositionCost(
+        newPos,
+        dots,
+        powerPellets,
+        ghostPositions,
+        weights,
+        visited
+      );
+
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestDirection = dir;
+      }
+    }
+
+    return bestDirection;
   }
 }
 
