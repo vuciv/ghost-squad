@@ -727,20 +727,13 @@ class GameScene extends Phaser.Scene {
 
 
   update(time, delta) {
-    // Adaptive interpolation based on frame rate
-    // Higher lerp for better responsiveness in multiplayer
-    const lerpFactor = Math.min(0.5, delta / 50);
+    // Smoother, faster interpolation
+    const lerpFactor = Math.min(0.35, delta / 30);
 
     // Update Pacman sprite
     if (this.pacmanSprite && typeof this.pacmanSprite.targetX !== 'undefined') {
-      const distX = Math.abs(this.pacmanSprite.targetX - this.pacmanSprite.x);
-      const distY = Math.abs(this.pacmanSprite.targetY - this.pacmanSprite.y);
-
-      // Use faster interpolation for small distances
-      const factor = (distX < 5 && distY < 5) ? 0.6 : lerpFactor;
-
-      this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * factor;
-      this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * factor;
+      this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * lerpFactor;
+      this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * lerpFactor;
 
       if (this.pacmanEmoteText) {
         this.pacmanEmoteText.x = this.pacmanSprite.x;
@@ -751,14 +744,8 @@ class GameScene extends Phaser.Scene {
     // Update ghost sprites
     for (const sprite of this.entities.values()) {
       if (sprite && typeof sprite.targetX !== 'undefined') {
-        const distX = Math.abs(sprite.targetX - sprite.x);
-        const distY = Math.abs(sprite.targetY - sprite.y);
-
-        // Use faster interpolation for small distances
-        const factor = (distX < 5 && distY < 5) ? 0.6 : lerpFactor;
-
-        sprite.x += (sprite.targetX - sprite.x) * factor;
-        sprite.y += (sprite.targetY - sprite.y) * factor;
+        sprite.x += (sprite.targetX - sprite.x) * lerpFactor;
+        sprite.y += (sprite.targetY - sprite.y) * lerpFactor;
 
         if (sprite.label) {
           sprite.label.x = sprite.x;

@@ -301,6 +301,23 @@ class Game {
   }
 
   private moveGhost(player: Player): void {
+    // Check if player has an intended direction buffered
+    const intendedDirection = (player as any).intendedDirection as Direction | undefined;
+
+    if (intendedDirection) {
+      const intendedDir = CONSTANTS.DIRECTIONS[intendedDirection];
+      if (intendedDir) {
+        const intendedX = player.position.x + intendedDir.x;
+        const intendedY = player.position.y + intendedDir.y;
+
+        // If intended direction is now walkable, use it
+        if (this.isWalkable(intendedX, intendedY)) {
+          player.direction = intendedDirection;
+          (player as any).intendedDirection = undefined; // Clear buffer
+        }
+      }
+    }
+
     const dir = CONSTANTS.DIRECTIONS[player.direction];
     if (!dir) return;
 
@@ -308,7 +325,7 @@ class Game {
     const targetX = player.position.x + dir.x;
     const targetY = player.position.y + dir.y;
 
-    // Only move if target is walkable
+    // If target is walkable, move
     if (this.isWalkable(targetX, targetY)) {
       player.position.x = targetX;
       player.position.y = targetY;
@@ -320,6 +337,8 @@ class Game {
         player.position.y = teleportExit.y;
       }
     }
+    // If blocked, don't stop - the player just continues in current direction
+    // This prevents stopping when missing a turn in a corridor
   }
 
   private isWalkable(x: number, y: number): boolean {
@@ -667,21 +686,8 @@ class Game {
   handlePlayerInput(socketId: string, direction: Direction): void {
     const player = this.players.get(socketId);
     if (player && (player.state === 'active' || player.state === 'frightened')) {
-      // Try to move in the new direction immediately if possible (easier turning)
-      const dir = CONSTANTS.DIRECTIONS[direction];
-      if (dir) {
-        const targetX = player.position.x + dir.x;
-        const targetY = player.position.y + dir.y;
-
-        // If the new direction is walkable, change immediately
-        if (this.isWalkable(targetX, targetY)) {
-          player.direction = direction;
-        } else {
-          // Otherwise queue it for next valid opportunity (keep current direction)
-          // This allows "early" turns before reaching intersection
-          player.direction = direction;
-        }
-      }
+      // Store the intended direction for buffered input
+      (player as any).intendedDirection = direction;
     }
   }
 
