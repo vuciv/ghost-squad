@@ -1,6 +1,7 @@
 import CONSTANTS = require('../shared/constants');
 import { MAZE_LAYOUT, STARTING_POSITIONS, TELEPORT_POINTS, Position } from '../shared/maze';
 import PacmanAI = require('./PacmanAI');
+import AggressiveAI = require('./AggressiveAI');
 import { Server } from 'socket.io';
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
@@ -34,6 +35,7 @@ class Game {
 
   // Pacman AI
   private pacman: PacmanAI;
+  private aggressiveAI: AggressiveAI;
   private pacmanPosition: Position;
   private pacmanDirection: Direction;
   private pacmanEmote: string;
@@ -48,6 +50,7 @@ class Game {
 
   // Timing
   private frightenedTimer: NodeJS.Timeout | null;
+  private frightenedStartTime: number | null;
   private respawnTimers: Map<string, NodeJS.Timeout>;
 
   // Collision tracking
@@ -80,6 +83,7 @@ class Game {
 
     // Pacman AI
     this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
+    this.aggressiveAI = new AggressiveAI();
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.previousPacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.pacmanDirection = 'RIGHT';
@@ -94,6 +98,7 @@ class Game {
 
     // Timing
     this.frightenedTimer = null;
+    this.frightenedStartTime = null;
     this.respawnTimers = new Map();
 
     // Collision tracking
@@ -242,12 +247,28 @@ class Game {
 
     const isFrightened = this.mode === CONSTANTS.MODES.FRIGHTENED;
     const previousDirection = this.pacmanDirection;
-    this.pacmanDirection = this.pacman.update(
-      this.dots,
-      this.powerPellets,
-      ghosts,
-      isFrightened
-    );
+
+    // AI SWITCHING LOGIC: Use aggressive AI when in frightened mode
+    // BUT switch back to defensive AI if less than 1 second remains
+    const timeRemainingMs = this.getFrightenedTimeRemaining();
+    const useAggressiveAI = isFrightened && timeRemainingMs > 1000;
+
+    if (useAggressiveAI) {
+      // AGGRO MODE: Hunt ghosts relentlessly
+      this.pacmanDirection = this.aggressiveAI.getHuntingDirection(
+        this.pacmanPosition,
+        this.pacmanDirection,
+        ghosts
+      );
+    } else {
+      // DEFENSIVE MODE: Normal survival AI
+      this.pacmanDirection = this.pacman.update(
+        this.dots,
+        this.powerPellets,
+        ghosts,
+        isFrightened
+      );
+    }
 
 
     const dir = CONSTANTS.DIRECTIONS[this.pacmanDirection];
@@ -343,6 +364,7 @@ class Game {
 
   private activateFrightenedMode(): void {
     this.mode = CONSTANTS.MODES.FRIGHTENED as GameMode;
+    this.frightenedStartTime = Date.now();
 
     // Pacman just ate power pellet - power up!
     const powerUpEmotes = ['😈', '💪', '🔥', '😤', '🎯'];
@@ -363,12 +385,27 @@ class Game {
     // Set timer to end frightened mode
     this.frightenedTimer = setTimeout(() => {
       this.mode = CONSTANTS.MODES.CHASE as GameMode;
+      this.frightenedStartTime = null;
       for (const player of this.players.values()) {
         if (player.state === 'frightened') {
           player.state = 'active';
         }
       }
     }, CONSTANTS.FRIGHTENED_DURATION);
+  }
+
+  /**
+   * Get remaining time in frightened mode (milliseconds)
+   * Returns 0 if not in frightened mode
+   */
+  private getFrightenedTimeRemaining(): number {
+    if (this.mode !== CONSTANTS.MODES.FRIGHTENED || !this.frightenedStartTime) {
+      return 0;
+    }
+
+    const elapsed = Date.now() - this.frightenedStartTime;
+    const remaining = CONSTANTS.FRIGHTENED_DURATION - elapsed;
+    return Math.max(0, remaining);
   }
 
   private checkCollisions(): void {

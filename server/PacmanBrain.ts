@@ -60,6 +60,7 @@ interface HeuristicWeights {
   POWER_PELLET_URGENCY: number;
   PROGRESS_BONUS: number;
   DISTANCE_PENALTY: number;
+  EXPLORATION_BONUS: number;
 }
 
 interface GameState {
@@ -84,6 +85,7 @@ declare namespace PacmanBrain {
       powerPelletUrgency: number;
       progressScore: number;
       distanceToFood: number;
+      explorationBonus: number;
     };
   }
 
@@ -117,6 +119,7 @@ class PacmanBrain {
       POWER_PELLET_URGENCY: 6000,   // Life-saving priority
       PROGRESS_BONUS: 200,          // Collect pellets, but survival is paramount
       DISTANCE_PENALTY: -3,         // Gentle pull toward food
+      EXPLORATION_BONUS: 150,       // Incentivize exploring when no nearby pellets
       ...weights
     };
   }
@@ -182,6 +185,101 @@ class PacmanBrain {
     }
     // Walkable: not a wall (0)
     return this.maze[pos.y][pos.x] !== 0;
+  }
+
+  // ===============================================
+  // A* PATHFINDING FOR SAFE EXPLORATION
+  // ===============================================
+
+  /**
+   * A* pathfinding algorithm - finds optimal path to target
+   * Used when far from danger to efficiently navigate to pellets
+   */
+  private aStar(start: Position, goal: Position): Position[] {
+    const openSet = new Set<string>([`${start.x},${start.y}`]);
+    const cameFrom = new Map<string, Position>();
+    const gScore = new Map<string, number>();
+    const fScore = new Map<string, number>();
+
+    gScore.set(`${start.x},${start.y}`, 0);
+    fScore.set(`${start.x},${start.y}`, this.heuristic(start, goal));
+
+    while (openSet.size > 0) {
+      // Find node with lowest fScore
+      let current: Position | null = null;
+      let lowestF = Infinity;
+
+      for (const posKey of openSet) {
+        const f = fScore.get(posKey) ?? Infinity;
+        if (f < lowestF) {
+          lowestF = f;
+          const [x, y] = posKey.split(',').map(Number);
+          current = { x, y };
+        }
+      }
+
+      if (!current) break;
+
+      const currentKey = `${current.x},${current.y}`;
+
+      // Goal reached
+      if (current.x === goal.x && current.y === goal.y) {
+        return this.reconstructPath(cameFrom, current);
+      }
+
+      openSet.delete(currentKey);
+
+      // Check all neighbors
+      const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+      for (const dir of directions) {
+        const neighbor = this.getPositionFromMove(current, dir);
+
+        if (!this.isWalkable(neighbor)) continue;
+
+        const neighborKey = `${neighbor.x},${neighbor.y}`;
+        const tentativeGScore = (gScore.get(currentKey) ?? Infinity) + 1;
+
+        if (tentativeGScore < (gScore.get(neighborKey) ?? Infinity)) {
+          cameFrom.set(neighborKey, current);
+          gScore.set(neighborKey, tentativeGScore);
+          fScore.set(neighborKey, tentativeGScore + this.heuristic(neighbor, goal));
+          openSet.add(neighborKey);
+        }
+      }
+    }
+
+    // No path found - return just the start position
+    return [start];
+  }
+
+  /**
+   * Reconstruct path from A* search
+   */
+  private reconstructPath(cameFrom: Map<string, Position>, current: Position): Position[] {
+    const path = [current];
+    let currentKey = `${current.x},${current.y}`;
+
+    while (cameFrom.has(currentKey)) {
+      const prev = cameFrom.get(currentKey)!;
+      path.unshift(prev);
+      currentKey = `${prev.x},${prev.y}`;
+    }
+
+    return path;
+  }
+
+  /**
+   * Get direction to move toward target position
+   */
+  private getDirectionToPosition(from: Position, to: Position): Direction {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return dx > 0 ? 'RIGHT' : 'LEFT';
+    } else {
+      return dy > 0 ? 'DOWN' : 'UP';
+    }
   }
 
   // ===============================================
@@ -293,6 +391,51 @@ class PacmanBrain {
     );
 
     return minFoodDist * this.weights.DISTANCE_PENALTY;
+  }
+
+  /**
+   * Calculate exploration bonus when no nearby pellets.
+   * Encourages Pac-Man to keep moving and explore when in "food deserts".
+   * @returns Positive bonus if no pellets nearby (safe exploration)
+   */
+  private calculateExplorationBonus(
+    pacmanPos: Position,
+    dots: Position[],
+    powerPellets: Position[],
+    ghosts: Ghost[]
+  ): number {
+    const NEARBY_RADIUS = 6; // Check for pellets within 6 tiles
+
+    const allFood = [...dots, ...powerPellets];
+
+    // Count pellets within nearby radius
+    const nearbyPellets = allFood.filter(
+      food => this.heuristic(pacmanPos, food) <= NEARBY_RADIUS
+    );
+
+    // If there are nearby pellets, no exploration bonus (normal behavior)
+    if (nearbyPellets.length > 0) {
+      return 0;
+    }
+
+    // No nearby pellets - we're in a food desert
+    // Check if it's safe to explore (no nearby ghosts)
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+    if (nonFrightenedGhosts.length > 0) {
+      const minGhostDist = Math.min(
+        ...nonFrightenedGhosts.map(g => this.heuristic(pacmanPos, g.position))
+      );
+
+      // Only give exploration bonus if reasonably safe (>8 tiles from ghosts)
+      if (minGhostDist > 8) {
+        return this.weights.EXPLORATION_BONUS;
+      }
+    } else {
+      // No dangerous ghosts - always incentivize exploration
+      return this.weights.EXPLORATION_BONUS;
+    }
+
+    return 0;
   }
 
   // ===============================================
@@ -510,6 +653,7 @@ class PacmanBrain {
     score += this.calculateDistanceToFoodScore(pacmanPos, dots, powerPellets);
     score += this.calculateFrightenedGhostBonus(pacmanPos, ghosts);
     score += this.calculatePowerPelletUrgency(pacmanPos, ghosts, powerPellets);
+    score += this.calculateExplorationBonus(pacmanPos, dots, powerPellets, ghosts);
 
     // TIER 2: Expensive heuristics (only for root-level evaluation)
     if (includeExpensiveHeuristics) {
@@ -703,7 +847,7 @@ class PacmanBrain {
     }
   }
 
-  // Find best move using Predictive Lookahead algorithm with inertia
+  // Find best move using Predictive Lookahead algorithm with anti-dithering
   private findBestMoveWithLookahead(
     state: GameState,
     currentDirection: Direction
@@ -715,11 +859,11 @@ class PacmanBrain {
     let bestMove: Direction | null = null;
     let bestValue = -Infinity;
     const validMoves = this.getValidPacmanMoves(state.pacmanPos);
-    
-    
+
+
     // Store the value of each move
     const moveValues = new Map<Direction, number>();
-    
+
     // Capture the true initial dot count from the start of the turn
     const initialDotCount = state.dots.length + state.powerPellets.length;
 
@@ -744,7 +888,7 @@ class PacmanBrain {
         false,
         initialDotCount
       );
-      
+
       moveValues.set(move, moveValue);
 
       if (moveValue > bestValue) {
@@ -779,13 +923,50 @@ class PacmanBrain {
       }
     }
 
-    // --- NO STABILIZATION: Always choose the absolute best move ---
-    // Directional stability was causing suicide by making Pac-Man stick to dangerous paths
-    // The deep lookahead (depth 12+) is smart enough to avoid dithering naturally
+    // --- ANTI-DITHERING LOGIC ---
+    // When far from danger or food, add inertia to maintain direction
+    const minGhostDist = Math.min(
+      ...state.ghosts.filter(g => !g.isFrightened).map(g => this.heuristic(state.pacmanPos, g.position)),
+      Infinity
+    );
+
+    const allFood = [...state.dots, ...state.powerPellets];
+    const minFoodDist = allFood.length > 0 ? Math.min(
+      ...allFood.map(f => this.heuristic(state.pacmanPos, f))
+    ) : Infinity;
+
+    // Apply inertia when:
+    // 1. Far from danger (>10 tiles) AND far from food (>8 tiles) - exploring empty areas
+    // 2. OR scores are very close (within 5% of best) - avoid micro-optimizations causing dithering
+    const isFarFromDanger = minGhostDist > 10;
+    const isFarFromFood = minFoodDist > 8;
+    const isExploring = isFarFromDanger && isFarFromFood;
+
+    if (bestMove !== null && validMoves.includes(currentDirection)) {
+      const currentScore = moveValues.get(currentDirection) ?? -Infinity;
+      const scoreDiff = Math.abs(bestValue - currentScore);
+      const closeScores = scoreDiff < Math.abs(bestValue) * 0.05;
+
+      // Strong inertia when exploring (empty areas, far from action)
+      // Moderate inertia when scores are close (avoid oscillation)
+      if (isExploring) {
+        // When exploring: give current direction a +15% bonus
+        const explorationBonus = Math.abs(bestValue) * 0.15;
+        if (currentScore + explorationBonus >= bestValue) {
+          bestMove = currentDirection;
+        }
+      } else if (closeScores && !isExploring) {
+        // When scores close but near food/danger: give current direction +5% bonus
+        const inertiaBonus = Math.abs(bestValue) * 0.05;
+        if (currentScore + inertiaBonus >= bestValue) {
+          bestMove = currentDirection;
+        }
+      }
+    }
 
     const endTime = Date.now();
     const processingTime = endTime - startTime;
-    
+
 
     return { bestMove, moveValues };
   }
@@ -803,6 +984,57 @@ class PacmanBrain {
     recentPositions: Position[]
   ): { direction: Direction | null; debugInfo: PacmanBrain.AIDebugInfo } {
 
+    // ===============================================
+    // SAFE EXPLORATION MODE: Use A* when far from danger
+    // ===============================================
+    const allFood = [...dots, ...powerPellets];
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+
+    if (nonFrightenedGhosts.length > 0 && allFood.length > 0) {
+      const minGhostDist = Math.min(
+        ...nonFrightenedGhosts.map(g => this.heuristic(start, g.position))
+      );
+
+      // If far from all ghosts (>12 tiles), use simple A* to nearest pellet
+      if (minGhostDist > 12) {
+        // Find nearest pellet
+        let nearestPellet: Position | null = null;
+        let minPelletDist = Infinity;
+
+        for (const pellet of allFood) {
+          const dist = this.heuristic(start, pellet);
+          if (dist < minPelletDist) {
+            minPelletDist = dist;
+            nearestPellet = pellet;
+          }
+        }
+
+        if (nearestPellet) {
+          // Use A* to path to nearest pellet
+          const path = this.aStar(start, nearestPellet);
+
+          if (path.length > 1) {
+            const nextPos = path[1];
+            const aStarDirection = this.getDirectionToPosition(start, nextPos);
+
+            // Return with minimal debug info (A* mode)
+            const debugInfo: PacmanBrain.AIDebugInfo = {
+              position: start,
+              directions: [],
+              chosenDirection: aStarDirection,
+              weights: this.weights,
+              isFrightened
+            };
+
+            return { direction: aStarDirection, debugInfo };
+          }
+        }
+      }
+    }
+
+    // ===============================================
+    // NORMAL DEFENSIVE MODE: Use predictive lookahead
+    // ===============================================
 
     // Create initial game state
     const initialState: GameState = {
@@ -842,7 +1074,8 @@ class PacmanBrain {
             frightenedGhostBonus: 0,
             powerPelletUrgency: 0,
             progressScore: 0,
-            distanceToFood: 0
+            distanceToFood: 0,
+            explorationBonus: 0
           }
         });
         continue;
@@ -859,7 +1092,8 @@ class PacmanBrain {
         frightenedGhostBonus: this.calculateFrightenedGhostBonus(moveState.pacmanPos, moveState.ghosts),
         powerPelletUrgency: this.calculatePowerPelletUrgency(moveState.pacmanPos, moveState.ghosts, moveState.powerPellets),
         progressScore: this.calculateProgressScore(moveState.dots, moveState.powerPellets, initialFoodCount),
-        distanceToFood: this.calculateDistanceToFoodScore(moveState.pacmanPos, moveState.dots, moveState.powerPellets)
+        distanceToFood: this.calculateDistanceToFoodScore(moveState.pacmanPos, moveState.dots, moveState.powerPellets),
+        explorationBonus: this.calculateExplorationBonus(moveState.pacmanPos, moveState.dots, moveState.powerPellets, moveState.ghosts)
       };
 
       directionDebugInfo.push({ direction: move, isWalkable: true, finalScore, breakdown });
