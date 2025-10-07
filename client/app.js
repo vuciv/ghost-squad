@@ -24,11 +24,11 @@ function initSocket() {
   socket = io();
 
   socket.on('connect', () => {
-    console.log('Connected to server');
+    // Connected to server
   });
 
   socket.on('disconnect', () => {
-    console.log('Disconnected from server');
+    // Disconnected from server
   });
 
   socket.on('gameState', (state) => {
@@ -44,7 +44,7 @@ function initSocket() {
   });
 
   socket.on('playerLeft', (data) => {
-    console.log('Player left:', data.socketId);
+    // Player left
   });
 }
 
@@ -156,7 +156,6 @@ roomCodeDisplay.addEventListener('click', () => {
       roomCodeDisplay.classList.remove('copied');
     }, 1500);
   }).catch(err => {
-    console.error('Failed to copy:', err);
     alert('Room code: ' + code);
   });
 });

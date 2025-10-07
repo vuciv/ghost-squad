@@ -162,15 +162,7 @@
       const cols = Math.floor((spriteSheet.width - MARGIN_X * 2 + SPACING_X) / (FRAME_WIDTH + SPACING_X));
       const rows = Math.floor((spriteSheet.height - MARGIN_Y * 2 + SPACING_Y) / (FRAME_HEIGHT + SPACING_Y));
       const totalFrames = cols * rows;
-      console.log(`Loaded sprite sheet: ${spriteSheet.width}x${spriteSheet.height}`);
-      console.log(`Grid: ${cols} cols x ${rows} rows`);
-      console.log(`Total frames: ${totalFrames}`);
-
-      // Log some key frames
-      console.log('Frame 196:', 196 % cols, Math.floor(196 / cols));
-      console.log('Frame 238:', 238 % cols, Math.floor(238 / cols));
-      console.log('Frame 280:', 280 % cols, Math.floor(280 / cols));
-      console.log('Frame 322:', 322 % cols, Math.floor(322 / cols));
+      // Sprite sheet loaded
 
       // Create grid view
       createGridView(totalFrames);
@@ -353,8 +345,7 @@
       const rows = Math.floor((spriteSheet.height - MARGIN_Y * 2 + SPACING_Y) / (FRAME_HEIGHT + SPACING_Y));
       const totalFrames = cols * rows;
 
-      console.log(`Rebuilt with marginX: ${MARGIN_X}, marginY: ${MARGIN_Y}, spacingX: ${SPACING_X}, spacingY: ${SPACING_Y}`);
-      console.log(`New grid: ${cols} cols x ${rows} rows = ${totalFrames} frames`);
+      // Grid rebuilt
 
       createGridView(totalFrames);
       drawFrame(currentFrame);

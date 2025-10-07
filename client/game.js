@@ -47,6 +47,7 @@ class GameScene extends Phaser.Scene {
     this.socket = data.socket;
     this.roomCode = data.roomCode;
     this.myGhostType = data.myGhostType;
+    this.mySocketId = this.socket.id;
   }
 
   preload() {
@@ -56,7 +57,7 @@ class GameScene extends Phaser.Scene {
 
     // Set up error handling for missing sprites (fallback to colored circles)
     this.load.on('loaderror', (file) => {
-      console.warn('Failed to load sprite:', file.key);
+      // Failed to load sprite
     });
   }
 
@@ -94,6 +95,14 @@ class GameScene extends Phaser.Scene {
       }
 
       if (direction) {
+        // Client-side prediction: immediately update local player direction
+        if (this.gameState && this.mySocketId) {
+          const myPlayer = this.gameState.players.find(p => p.socketId === this.mySocketId);
+          if (myPlayer) {
+            myPlayer.direction = direction;
+          }
+        }
+
         // Send to server
         this.socket.emit('playerInput', {
           roomCode: this.roomCode,
@@ -102,9 +111,45 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // Listen for game state updates
+    // Store full game state
+    this.gameState = null;
+
+    // Listen for full game state (initial load)
     this.socket.on('gameState', (state) => {
+      this.gameState = state;
       this.updateGameState(state);
+    });
+
+    // Listen for delta updates (optimized)
+    this.socket.on('gameUpdate', (delta) => {
+      if (!this.gameState) return;
+
+      // Merge delta into full state
+      if (delta.score !== undefined) this.gameState.score = delta.score;
+      if (delta.captureCount !== undefined) this.gameState.captureCount = delta.captureCount;
+      if (delta.mode !== undefined) this.gameState.mode = delta.mode;
+      if (delta.dots !== undefined) this.gameState.dots = delta.dots;
+      if (delta.powerPellets !== undefined) this.gameState.powerPellets = delta.powerPellets;
+
+      // Always update positions
+      if (delta.pacman) {
+        this.gameState.pacman.position = delta.pacman.position;
+        this.gameState.pacman.direction = delta.pacman.direction;
+        if (delta.pacman.emote !== undefined) this.gameState.pacman.emote = delta.pacman.emote;
+      }
+
+      if (delta.players) {
+        delta.players.forEach(updatedPlayer => {
+          const existingPlayer = this.gameState.players.find(p => p.socketId === updatedPlayer.socketId);
+          if (existingPlayer) {
+            existingPlayer.position = updatedPlayer.position;
+            existingPlayer.direction = updatedPlayer.direction;
+            existingPlayer.state = updatedPlayer.state;
+          }
+        });
+      }
+
+      this.updateGameState(this.gameState);
     });
 
     // Listen for game over
@@ -260,7 +305,6 @@ class GameScene extends Phaser.Scene {
 
   createAnimations() {
     if (!this.textures.exists('sprites')) {
-      console.warn('Sprite texture missing; animations will fallback to simple shapes.');
       return;
     }
 
@@ -667,13 +711,20 @@ class GameScene extends Phaser.Scene {
 
 
   update(time, delta) {
-    // Smooth interpolation for visual rendering
-    const lerpFactor = 0.25;
+    // Adaptive interpolation based on frame rate
+    // Higher lerp for better responsiveness in multiplayer
+    const lerpFactor = Math.min(0.5, delta / 50);
 
     // Update Pacman sprite
     if (this.pacmanSprite && typeof this.pacmanSprite.targetX !== 'undefined') {
-      this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * lerpFactor;
-      this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * lerpFactor;
+      const distX = Math.abs(this.pacmanSprite.targetX - this.pacmanSprite.x);
+      const distY = Math.abs(this.pacmanSprite.targetY - this.pacmanSprite.y);
+
+      // Use faster interpolation for small distances
+      const factor = (distX < 5 && distY < 5) ? 0.6 : lerpFactor;
+
+      this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * factor;
+      this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * factor;
 
       if (this.pacmanEmoteText) {
         this.pacmanEmoteText.x = this.pacmanSprite.x;
@@ -684,8 +735,14 @@ class GameScene extends Phaser.Scene {
     // Update ghost sprites
     for (const sprite of this.entities.values()) {
       if (sprite && typeof sprite.targetX !== 'undefined') {
-        sprite.x += (sprite.targetX - sprite.x) * lerpFactor;
-        sprite.y += (sprite.targetY - sprite.y) * lerpFactor;
+        const distX = Math.abs(sprite.targetX - sprite.x);
+        const distY = Math.abs(sprite.targetY - sprite.y);
+
+        // Use faster interpolation for small distances
+        const factor = (distX < 5 && distY < 5) ? 0.6 : lerpFactor;
+
+        sprite.x += (sprite.targetX - sprite.x) * factor;
+        sprite.y += (sprite.targetY - sprite.y) * factor;
 
         if (sprite.label) {
           sprite.label.x = sprite.x;

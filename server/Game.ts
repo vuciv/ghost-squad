@@ -24,7 +24,6 @@ class Game {
   private players: Map<string, Player>;
   isStarted: boolean;
   private gameLoop: NodeJS.Timeout | null;
-  private logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
   // Game state
   private mode: GameMode;
@@ -54,14 +53,23 @@ class Game {
   // Collision tracking
   private previousPlayerPositions: Map<string, Position>;
 
+  // Delta tracking for efficient network updates
+  private lastBroadcastState: {
+    score: number;
+    captureCount: number;
+    mode: GameMode;
+    dotsCount: number;
+    pelletsCount: number;
+  };
+  private dotsChanged: boolean;
+  private pelletsChanged: boolean;
 
-  constructor(roomCode: string, io: Server, logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO') {
+  constructor(roomCode: string, io: Server) {
     this.roomCode = roomCode;
     this.io = io;
     this.players = new Map();
     this.isStarted = false;
     this.gameLoop = null;
-    this.logLevel = logLevel;
 
     // Game state
     this.mode = CONSTANTS.MODES.CHASE as GameMode;
@@ -71,7 +79,7 @@ class Game {
     this.powerPellets = this.initializePowerPellets();
 
     // Pacman AI
-    this.pacman = new PacmanAI(STARTING_POSITIONS.pacman, logLevel);
+    this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.previousPacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.pacmanDirection = 'RIGHT';
@@ -90,21 +98,19 @@ class Game {
 
     // Collision tracking
     this.previousPlayerPositions = new Map();
+
+    // Initialize delta tracking
+    this.lastBroadcastState = {
+      score: 0,
+      captureCount: 0,
+      mode: this.mode,
+      dotsCount: this.dots.length,
+      pelletsCount: this.powerPellets.length
+    };
+    this.dotsChanged = false;
+    this.pelletsChanged = false;
   }
 
-  // Logging methods
-  private log(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', message: string, data?: any): void {
-    const levels = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
-    if (levels[level] >= levels[this.logLevel]) {
-      const timestamp = new Date().toISOString();
-      const logMessage = `[${timestamp}] [${level}] [Game:${this.roomCode}] ${message}`;
-      if (data) {
-        console.log(logMessage, data);
-      } else {
-        console.log(logMessage);
-      }
-    }
-  }
 
   private initializeDots(): Position[] {
     const dots: Position[] = [];
@@ -178,20 +184,12 @@ class Game {
   start(): void {
     this.isStarted = true;
     this.gameLoop = setInterval(() => this.update(), CONSTANTS.TICK_RATE);
-    this.log('INFO', 'Game started', {
-      playerCount: this.players.size,
-      players: Array.from(this.players.values()).map(p => ({
-        username: p.username,
-        ghostType: p.ghostType
-      }))
-    });
   }
 
   stop(): void {
     if (this.gameLoop) {
       clearInterval(this.gameLoop);
       this.gameLoop = null;
-      this.log('INFO', 'Game stopped');
     }
   }
 
@@ -229,13 +227,6 @@ class Game {
   }
 
   private movePacman(): void {
-    this.log('DEBUG', 'Moving Pacman', {
-      currentPosition: this.pacmanPosition,
-      currentDirection: this.pacmanDirection,
-      mode: this.mode,
-      dotsRemaining: this.dots.length,
-      powerPelletsRemaining: this.powerPellets.length
-    });
 
     // Update Pacman AI decision
     const ghosts = Array.from(this.players.values())
@@ -246,14 +237,6 @@ class Game {
         isFrightened: p.state === 'frightened'
       }));
 
-    this.log('DEBUG', 'Ghosts for AI decision', {
-      ghostCount: ghosts.length,
-      ghosts: ghosts.map(g => ({
-        position: g.position,
-        direction: g.direction,
-        isFrightened: g.isFrightened
-      }))
-    });
 
     const isFrightened = this.mode === CONSTANTS.MODES.FRIGHTENED;
     const previousDirection = this.pacmanDirection;
@@ -264,11 +247,6 @@ class Game {
       isFrightened
     );
 
-    this.log('INFO', 'Pacman direction updated', {
-      previousDirection,
-      newDirection: this.pacmanDirection,
-      directionChanged: previousDirection !== this.pacmanDirection
-    });
 
     const dir = CONSTANTS.DIRECTIONS[this.pacmanDirection];
     if (!dir) return;
@@ -347,11 +325,7 @@ class Game {
     if (dotIndex !== -1) {
       this.dots.splice(dotIndex, 1);
       this.score += CONSTANTS.DOT_VALUE;
-      this.log('DEBUG', 'Dot collected', {
-        position: { x, y },
-        score: this.score,
-        dotsRemaining: this.dots.length
-      });
+      this.dotsChanged = true;
     }
   }
 
@@ -360,21 +334,13 @@ class Game {
     if (pelletIndex !== -1) {
       this.powerPellets.splice(pelletIndex, 1);
       this.score += CONSTANTS.POWER_PELLET_VALUE;
-      this.log('INFO', 'Power pellet collected!', {
-        position: { x, y },
-        score: this.score,
-        powerPelletsRemaining: this.powerPellets.length
-      });
+      this.pelletsChanged = true;
       this.activateFrightenedMode();
     }
   }
 
   private activateFrightenedMode(): void {
     this.mode = CONSTANTS.MODES.FRIGHTENED as GameMode;
-    this.log('INFO', 'Frightened mode activated!', {
-      duration: CONSTANTS.FRIGHTENED_DURATION,
-      affectedPlayers: this.players.size
-    });
 
     // Pacman just ate power pellet - power up!
     const powerUpEmotes = ['😈', '💪', '🔥', '😤', '🎯'];
@@ -384,7 +350,6 @@ class Game {
     for (const player of this.players.values()) {
       if (player.state === 'active') {
         player.state = 'frightened';
-        this.log('DEBUG', `Player ${player.username} (${player.ghostType}) is now frightened`);
       }
     }
 
@@ -432,13 +397,6 @@ class Game {
       }
 
       if (collisionDetected) {
-        this.log('INFO', 'Collision detected!', {
-          player: player.username,
-          ghostType: player.ghostType,
-          pacmanPosition: this.pacmanPosition,
-          ghostPosition: player.position,
-          mode: this.mode
-        });
 
         if (this.mode === CONSTANTS.MODES.FRIGHTENED) {
           this.respawnGhost(player);
@@ -651,11 +609,6 @@ class Game {
 
   private checkGameOver(): void {
     if (this.captureCount >= CONSTANTS.CAPTURES_TO_WIN) {
-      this.log('INFO', 'Game Over - Ghosts Win!', {
-        captureCount: this.captureCount,
-        requiredCaptures: CONSTANTS.CAPTURES_TO_WIN,
-        finalScore: this.score
-      });
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
       this.stop();
       this.io.to(this.roomCode).emit('gameOver', {
@@ -663,10 +616,6 @@ class Game {
         score: this.score
       });
     } else if (this.dots.length === 0) {
-      this.log('INFO', 'Game Over - Pacman Wins!', {
-        dotsRemaining: this.dots.length,
-        finalScore: this.score
-      });
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
       this.stop();
       this.io.to(this.roomCode).emit('gameOver', {
@@ -707,19 +656,60 @@ class Game {
     };
   }
 
+  private getDeltaState() {
+    const delta: any = {
+      // Always send positions (critical for gameplay)
+      pacman: {
+        position: this.pacmanPosition,
+        direction: this.pacmanDirection
+      },
+      players: Array.from(this.players.values()).map(p => ({
+        socketId: p.socketId,
+        position: p.position,
+        direction: p.direction,
+        state: p.state
+      }))
+    };
+
+    // Only include changed data
+    if (this.score !== this.lastBroadcastState.score) {
+      delta.score = this.score;
+      this.lastBroadcastState.score = this.score;
+    }
+
+    if (this.captureCount !== this.lastBroadcastState.captureCount) {
+      delta.captureCount = this.captureCount;
+      this.lastBroadcastState.captureCount = this.captureCount;
+    }
+
+    if (this.mode !== this.lastBroadcastState.mode) {
+      delta.mode = this.mode;
+      this.lastBroadcastState.mode = this.mode;
+    }
+
+    if (this.dotsChanged) {
+      delta.dots = this.dots;
+      this.lastBroadcastState.dotsCount = this.dots.length;
+      this.dotsChanged = false;
+    }
+
+    if (this.pelletsChanged) {
+      delta.powerPellets = this.powerPellets;
+      this.lastBroadcastState.pelletsCount = this.powerPellets.length;
+      this.pelletsChanged = false;
+    }
+
+    if (this.pacmanEmote) {
+      delta.pacman.emote = this.pacmanEmote;
+    }
+
+    return delta;
+  }
+
   private broadcastState(): void {
-    this.io.to(this.roomCode).emit('gameState', this.getState());
+    this.io.to(this.roomCode).emit('gameUpdate', this.getDeltaState());
   }
 
-  setLogLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
-    this.logLevel = level;
-    this.pacman.setLogLevel(level);
-    this.log('INFO', `Log level changed to ${level}`);
-  }
-
-  getLogLevel(): string {
-    return this.logLevel;
-  }
 }
 
 export = Game;

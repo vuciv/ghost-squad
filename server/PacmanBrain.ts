@@ -101,13 +101,11 @@ class PacmanBrain {
   private searchDepth: number;
   private nodesEvaluated: number; // For debugging/performance tracking
   private weights: HeuristicWeights;
-  private logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
-  constructor(searchDepth: number = 12, weights: Partial<HeuristicWeights> = {}, logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO') {
+  constructor(searchDepth: number = 12, weights: Partial<HeuristicWeights> = {}) {
     this.maze = MAZE_LAYOUT;
     this.searchDepth = Math.max(1, Math.min(searchDepth, 20)); // Clamp to 1-20 for deep planning
     this.nodesEvaluated = 0;
-    this.logLevel = logLevel;
 
     // ULTRA-DEFENSIVE weights - survival is everything
     // These weights prioritize staying alive above all else
@@ -123,60 +121,9 @@ class PacmanBrain {
     };
   }
 
-  // Logging methods
-  private log(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', message: string, data?: any): void {
-    const levels = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
-    if (levels[level] >= levels[this.logLevel]) {
-      const timestamp = new Date().toISOString();
-      const logMessage = `[${timestamp}] [${level}] [PacmanBrain] ${message}`;
-      if (data) {
-        console.log(logMessage, data);
-      } else {
-        console.log(logMessage);
-      }
-    }
-  }
 
-  private logDecisionContext(pacmanPos: Position, ghosts: Ghost[], dots: Position[], powerPellets: Position[], isFrightened: boolean): void {
-    this.log('DEBUG', '=== DECISION CONTEXT ===', {
-      pacmanPosition: pacmanPos,
-      ghostCount: ghosts.length,
-      ghosts: ghosts.map(g => ({
-        position: g.position,
-        direction: g.direction,
-        isFrightened: g.isFrightened
-      })),
-      dotsRemaining: dots.length,
-      powerPelletsRemaining: powerPellets.length,
-      isFrightenedMode: isFrightened,
-      searchDepth: this.searchDepth
-    });
-  }
 
-  private logHeuristicBreakdown(direction: Direction, breakdown: any, finalScore: number): void {
-    this.log('DEBUG', `Heuristic breakdown for ${direction}:`, {
-      direction,
-      finalScore,
-      breakdown: {
-        ghostDanger: breakdown.ghostDanger.toFixed(2),
-        chokePointDanger: breakdown.chokePointDanger.toFixed(2),
-        positionalAdvantage: breakdown.positionalAdvantage.toFixed(2),
-        frightenedGhostBonus: breakdown.frightenedGhostBonus.toFixed(2),
-        powerPelletUrgency: breakdown.powerPelletUrgency.toFixed(2),
-        progressScore: breakdown.progressScore.toFixed(2),
-        distanceToFood: breakdown.distanceToFood.toFixed(2)
-      }
-    });
-  }
 
-  private logDecisionResult(chosenDirection: Direction | null, allScores: Map<Direction, number>, reasoning: string): void {
-    this.log('INFO', `=== DECISION MADE ===`, {
-      chosenDirection,
-      reasoning,
-      allScores: Object.fromEntries(allScores),
-      nodesEvaluated: this.nodesEvaluated
-    });
-  }
 
   // Manhattan distance heuristic (considers teleportation as a shortcut)
   heuristic(a: Position, b: Position): number {
@@ -276,7 +223,6 @@ class PacmanBrain {
   private calculateGhostDanger(pacmanPos: Position, ghosts: Ghost[]): number {
     const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
     if (nonFrightenedGhosts.length === 0) {
-      this.log('DEBUG', 'No non-frightened ghosts, ghost danger = 0');
       return 0; // No danger if all ghosts are frightened
     }
 
@@ -287,13 +233,6 @@ class PacmanBrain {
     // Inverse distance creates exponential danger as ghosts approach
     const danger = this.weights.GHOST_DANGER / (minGhostDist + 1);
     
-    this.log('DEBUG', 'Ghost danger calculated', {
-      pacmanPos,
-      nonFrightenedGhostCount: nonFrightenedGhosts.length,
-      minGhostDist: minGhostDist.toFixed(2),
-      danger: danger.toFixed(2),
-      weight: this.weights.GHOST_DANGER
-    });
 
     return danger;
   }
@@ -417,14 +356,12 @@ class PacmanBrain {
     const isOnPellet = powerPellets.some(p => p.x === pacmanPos.x && p.y === pacmanPos.y);
 
     if (!isOnPellet) {
-      this.log('DEBUG', 'Not on power pellet, urgency = 0');
       return 0; // Not on a pellet, so no urgency bonus.
     }
 
     // Find the closest non-frightened ghost.
     const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
     if (nonFrightenedGhosts.length === 0) {
-      this.log('DEBUG', 'No non-frightened ghosts, urgency = 0');
       return 0; // No danger, no urgency.
     }
 
@@ -436,21 +373,9 @@ class PacmanBrain {
     if (minGhostDist < URGENCY_RADIUS) {
       // The closer the ghost, the larger the bonus.
       const urgency = this.weights.POWER_PELLET_URGENCY / (minGhostDist + 1);
-      this.log('DEBUG', 'Power pellet urgency triggered!', {
-        pacmanPos,
-        minGhostDist: minGhostDist.toFixed(2),
-        urgencyRadius: URGENCY_RADIUS,
-        urgency: urgency.toFixed(2),
-        weight: this.weights.POWER_PELLET_URGENCY
-      });
       return urgency;
     }
 
-    this.log('DEBUG', 'On power pellet but ghost too far', {
-      pacmanPos,
-      minGhostDist: minGhostDist.toFixed(2),
-      urgencyRadius: URGENCY_RADIUS
-    });
     return 0; // Ghost is too far away to be an urgent threat.
   }
 
@@ -786,17 +711,11 @@ class PacmanBrain {
     this.nodesEvaluated = 0;
     const startTime = Date.now();
 
-    this.log('DEBUG', 'Starting lookahead search', {
-      pacmanPosition: state.pacmanPos,
-      currentDirection,
-      searchDepth: this.searchDepth
-    });
 
     let bestMove: Direction | null = null;
     let bestValue = -Infinity;
     const validMoves = this.getValidPacmanMoves(state.pacmanPos);
     
-    this.log('DEBUG', 'Valid moves found', { validMoves });
     
     // Store the value of each move
     const moveValues = new Map<Direction, number>();
@@ -805,7 +724,6 @@ class PacmanBrain {
     const initialDotCount = state.dots.length + state.powerPellets.length;
 
     if (validMoves.length === 0) {
-      this.log('WARN', 'No valid moves available!');
       return { bestMove: null, moveValues };
     }
 
@@ -813,13 +731,9 @@ class PacmanBrain {
       // Clone state and simulate Pac-Man's move
       const newState = this.cloneGameState(state);
       if (!this.simulatePacmanMove(newState, move)) {
-        this.log('DEBUG', `Move ${move} is not walkable, skipping`);
         continue;
       }
 
-      this.log('DEBUG', `Evaluating move ${move}`, {
-        newPosition: newState.pacmanPos
-      });
 
       // Run predictive lookahead from this state (ghosts predicted next)
       const moveValue = this.predictiveLookahead(
@@ -832,18 +746,15 @@ class PacmanBrain {
       );
       
       moveValues.set(move, moveValue);
-      this.log('DEBUG', `Move ${move} scored ${moveValue.toFixed(2)}`);
 
       if (moveValue > bestValue) {
         bestValue = moveValue;
         bestMove = move;
-        this.log('DEBUG', `New best move: ${move} with score ${moveValue.toFixed(2)}`);
       }
     }
 
     // --- TIER 2: Add expensive heuristics for root-level moves only ---
     // These were skipped during deep search for performance, but are important for final decision
-    this.log('DEBUG', 'Adding expensive heuristics to root-level moves');
     for (const [move, deepScore] of moveValues.entries()) {
       // Simulate the move to get the resulting position
       const moveState = this.cloneGameState(state);
@@ -860,7 +771,6 @@ class PacmanBrain {
       const totalScore = deepScore + expensiveScore;
       moveValues.set(move, totalScore);
 
-      this.log('DEBUG', `Move ${move}: deepScore=${deepScore.toFixed(2)}, expensive=${expensiveScore.toFixed(2)}, total=${totalScore.toFixed(2)}`);
 
       // Update best move if needed
       if (totalScore > bestValue) {
@@ -872,21 +782,10 @@ class PacmanBrain {
     // --- NO STABILIZATION: Always choose the absolute best move ---
     // Directional stability was causing suicide by making Pac-Man stick to dangerous paths
     // The deep lookahead (depth 12+) is smart enough to avoid dithering naturally
-    this.log('DEBUG', 'Best move chosen purely on evaluation score', {
-      bestMove,
-      bestValue: bestValue.toFixed(2),
-      allMoveScores: Object.fromEntries(moveValues)
-    });
 
     const endTime = Date.now();
     const processingTime = endTime - startTime;
     
-    this.log('INFO', 'Lookahead search completed', {
-      chosenMove: bestMove,
-      processingTime: `${processingTime}ms`,
-      nodesEvaluated: this.nodesEvaluated,
-      allMoveValues: Object.fromEntries(moveValues)
-    });
 
     return { bestMove, moveValues };
   }
@@ -903,15 +802,7 @@ class PacmanBrain {
     isFrightened: boolean,
     recentPositions: Position[]
   ): { direction: Direction | null; debugInfo: PacmanBrain.AIDebugInfo } {
-    this.log('INFO', 'Starting decision process', {
-      currentPosition: start,
-      currentDirection,
-      isFrightened,
-      ghostPositions: ghosts.map((g, i) => `Ghost${i}: (${g.position.x},${g.position.y}) dir=${g.direction} dist=${this.heuristic(start, g.position)}`).join(' | ')
-    });
 
-    // Log decision context
-    this.logDecisionContext(start, ghosts, dots, powerPellets, isFrightened);
 
     // Create initial game state
     const initialState: GameState = {
@@ -1006,14 +897,8 @@ class PacmanBrain {
         return `Ghost${i}: (${g.position.x},${g.position.y})→(${predictedPos.x},${predictedPos.y}) ${collisionFlag}`;
       }).join(' | ');
 
-      this.log('INFO', 'Ghost predictions after move', {
-        move: `${bestMove}: (${start.x},${start.y})→(${nextPacmanPos.x},${nextPacmanPos.y})`,
-        predictions
-      });
     }
 
-    // Use pre-calculated move values for logging (no redundant calculation!)
-    this.logDecisionResult(bestMove, moveValues, reasoning);
 
     return { direction: bestMove, debugInfo };
   }
@@ -1034,14 +919,6 @@ class PacmanBrain {
     return this.nodesEvaluated;
   }
 
-  setLogLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
-    this.logLevel = level;
-    this.log('INFO', `Log level changed to ${level}`);
-  }
-
-  getLogLevel(): string {
-    return this.logLevel;
-  }
 }
 
 export = PacmanBrain;
