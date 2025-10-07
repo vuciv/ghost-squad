@@ -990,13 +990,74 @@ class PacmanBrain {
     const allFood = [...dots, ...powerPellets];
     const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
 
+    // WINNING MOVE DETECTION: If we can get the last pellet(s) before any ghost reaches us, GO FOR IT!
+    if (allFood.length > 0 && allFood.length <= 10) {
+      // Find nearest pellet
+      let nearestPellet: Position | null = null;
+      let minPelletDist = Infinity;
+
+      for (const pellet of allFood) {
+        const dist = this.heuristic(start, pellet);
+        if (dist < minPelletDist) {
+          minPelletDist = dist;
+          nearestPellet = pellet;
+        }
+      }
+
+      if (nearestPellet) {
+        // Calculate if we can reach it before ghosts
+        const pathToPellet = this.aStar(start, nearestPellet);
+        const pacmanDistance = pathToPellet.length - 1; // Subtract 1 because path includes start
+
+        // Find closest ghost to the pellet
+        let minGhostToPelletDist = Infinity;
+        for (const ghost of nonFrightenedGhosts) {
+          const ghostDist = this.heuristic(ghost.position, nearestPellet);
+          minGhostToPelletDist = Math.min(minGhostToPelletDist, ghostDist);
+        }
+
+        // If we can reach the pellet before any ghost (with 2 tile safety buffer), GO FOR IT!
+        if (pacmanDistance + 2 < minGhostToPelletDist) {
+          if (pathToPellet.length > 1) {
+            const nextPos = pathToPellet[1];
+            const winningDirection = this.getDirectionToPosition(start, nextPos);
+
+            const debugInfo: PacmanBrain.AIDebugInfo = {
+              position: start,
+              directions: [],
+              chosenDirection: winningDirection,
+              weights: this.weights,
+              isFrightened
+            };
+
+            return { direction: winningDirection, debugInfo };
+          }
+        }
+      }
+    }
+
     if (nonFrightenedGhosts.length > 0 && allFood.length > 0) {
       const minGhostDist = Math.min(
         ...nonFrightenedGhosts.map(g => this.heuristic(start, g.position))
       );
 
-      // If far from all ghosts (>12 tiles), use simple A* to nearest pellet
-      if (minGhostDist > 12) {
+      // Dynamic threshold: fewer pellets = more aggressive A* usage
+      // When close to winning, prioritize getting pellets over complex evasion
+      const totalFood = allFood.length;
+      let distanceThreshold: number;
+
+      if (totalFood <= 5) {
+        distanceThreshold = 6;  // Very low pellet count: aggressive A*
+      } else if (totalFood <= 20) {
+        distanceThreshold = 8;  // Low pellet count: moderately aggressive
+      } else if (totalFood <= 50) {
+        distanceThreshold = 10; // Medium pellet count: balanced
+      } else {
+        distanceThreshold = 12; // High pellet count: defensive
+      }
+
+      // If far from all ghosts, use simple A* to nearest pellet
+      if (minGhostDist > distanceThreshold) {
         // Find nearest pellet
         let nearestPellet: Position | null = null;
         let minPelletDist = Infinity;
