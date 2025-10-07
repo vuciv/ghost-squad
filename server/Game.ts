@@ -204,15 +204,19 @@ class Game {
     }
 
     // Update Pacman AI decision only when we're actually going to move
-    const ghostPositions = Array.from(this.players.values())
+    const ghosts = Array.from(this.players.values())
       .filter(p => p.state === 'active' || p.state === 'frightened')
-      .map(p => p.position);
+      .map(p => ({
+        position: p.position,
+        direction: p.direction,
+        isFrightened: p.state === 'frightened'
+      }));
 
     const isFrightened = this.mode === CONSTANTS.MODES.FRIGHTENED;
     this.pacmanDirection = this.pacman.update(
       this.dots,
       this.powerPellets,
-      ghostPositions,
+      ghosts,
       isFrightened
     );
 
@@ -578,7 +582,8 @@ class Game {
       pacman: {
         position: this.pacmanPosition,
         direction: this.pacmanDirection,
-        emote: this.pacmanEmote
+        emote: this.pacmanEmote,
+        debugInfo: this.pacman.getDebugInfo()
       },
       players: Array.from(this.players.values()).map(p => ({
         socketId: p.socketId,

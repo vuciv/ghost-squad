@@ -1,31 +1,43 @@
-import AStar = require('./AStar');
+import PacmanBrain = require('./PacmanBrain');
 import { Position } from '../shared/maze';
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 
+interface Ghost {
+  position: Position;
+  direction: Direction;
+  isFrightened: boolean;
+}
+
 class PacmanAI {
   private position: Position;
   private direction: Direction;
-  private pathfinder: AStar;
+  private pathfinder: PacmanBrain;
   private positionHistory: Position[];
+  private debugInfo: PacmanBrain.AIDebugInfo | null;
 
   constructor(position: Position) {
     this.position = { ...position };
     this.direction = 'RIGHT';
-    this.pathfinder = new AStar();
+    this.pathfinder = new PacmanBrain();
     this.positionHistory = [];
+    this.debugInfo = null;
   }
 
-  update(dots: Position[], powerPellets: Position[], ghostPositions: Position[], isFrightened: boolean): Direction {
+  update(dots: Position[], powerPellets: Position[], ghosts: Ghost[], isFrightened: boolean): Direction {
     // Use integer positions for pathfinding
     const intPos: Position = { 
       x: Math.floor(this.position.x), 
       y: Math.floor(this.position.y) 
     };
     
-    const intGhostPositions: Position[] = ghostPositions.map(g => ({
-      x: Math.floor(g.x),
-      y: Math.floor(g.y)
+    const intGhosts: Ghost[] = ghosts.map(g => ({
+      position: {
+        x: Math.floor(g.position.x),
+        y: Math.floor(g.position.y)
+      },
+      direction: g.direction,
+      isFrightened: g.isFrightened
     }));
 
     // Track position history to avoid loops
@@ -34,22 +46,30 @@ class PacmanAI {
       this.positionHistory.shift();
     }
 
-    // Use weighted A* to find the best direction considering all factors
-    const bestDirection = this.pathfinder.findBestDirection(
+    // Use look-ahead evaluation to find the best direction
+    const result = this.pathfinder.findBestDirection(
       intPos,
+      this.direction,
       dots,
       powerPellets,
-      intGhostPositions,
+      intGhosts,
       isFrightened,
       this.positionHistory
     );
 
-    if (bestDirection) {
-      this.direction = bestDirection;
+    if (result.direction) {
+      this.direction = result.direction;
     }
     // If no valid direction found, keep current direction
 
+    // Store debug info for visualization
+    this.debugInfo = result.debugInfo;
+
     return this.direction;
+  }
+
+  getDebugInfo(): PacmanBrain.AIDebugInfo | null {
+    return this.debugInfo;
   }
 
 
