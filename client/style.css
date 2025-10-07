@@ -416,3 +416,95 @@ body {
   margin-bottom: 20px;
   color: #0ff;
 }
+
+/* Support links panel */
+.support-links {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  gap: 10px;
+  z-index: 20; /* above HUD */
+  pointer-events: auto; /* clickable even though parent disables by default */
+}
+
+.support-btn {
+  padding: 10px 12px;
+  font-size: 10px;
+  line-height: 1;
+  font-family: inherit;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.8);
+  transition: transform 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.support-btn:hover {
+  transform: scale(1.05);
+}
+
+.support-btn:active {
+  transform: scale(0.98);
+}
+
+.support-btn.coffee {
+  border-color: #ffdd00;
+  background: rgba(30, 20, 0, 0.85);
+}
+
+.support-btn.coffee:hover {
+  background: rgba(50, 35, 0, 0.9);
+}
+
+.support-btn.youtube {
+  border-color: #ff0000;
+  background: rgba(40, 0, 0, 0.85);
+}
+
+.support-btn.youtube:hover {
+  background: rgba(60, 0, 0, 0.9);
+}
+
+/* Audio controls */
+.audio-controls {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  gap: 10px;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.audio-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #0ff;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.audio-btn:hover {
+  background: rgba(0, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.audio-btn:active {
+  transform: scale(0.95);
+}
+
+.audio-btn.disabled {
+  opacity: 0.3;
+  border-color: #666;
+}
