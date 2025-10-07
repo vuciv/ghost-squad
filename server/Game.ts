@@ -667,7 +667,21 @@ class Game {
   handlePlayerInput(socketId: string, direction: Direction): void {
     const player = this.players.get(socketId);
     if (player && (player.state === 'active' || player.state === 'frightened')) {
-      player.direction = direction;
+      // Try to move in the new direction immediately if possible (easier turning)
+      const dir = CONSTANTS.DIRECTIONS[direction];
+      if (dir) {
+        const targetX = player.position.x + dir.x;
+        const targetY = player.position.y + dir.y;
+
+        // If the new direction is walkable, change immediately
+        if (this.isWalkable(targetX, targetY)) {
+          player.direction = direction;
+        } else {
+          // Otherwise queue it for next valid opportunity (keep current direction)
+          // This allows "early" turns before reaching intersection
+          player.direction = direction;
+        }
+      }
     }
   }
 

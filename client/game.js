@@ -555,11 +555,12 @@ class GameScene extends Phaser.Scene {
       this.pacmanSprite.setDepth(1);
       this.pacmanSprite.x = targetX;
       this.pacmanSprite.y = targetY;
+      this.pacmanSprite.lastDirection = pacman.direction;
     }
 
     // Create emote text if it doesn't exist
     if (!this.pacmanEmoteText) {
-      this.pacmanEmoteText = this.add.text(targetX, targetY - tileSize / 2 - 5, '', 
+      this.pacmanEmoteText = this.add.text(targetX, targetY - tileSize / 2 - 5, '',
         { fontSize: '20px', fontFamily: 'Arial' });
       this.pacmanEmoteText.setOrigin(0.5);
       this.pacmanEmoteText.setDepth(3);
@@ -579,6 +580,9 @@ class GameScene extends Phaser.Scene {
       this.pacmanEmoteText.y = targetY - tileSize / 2 - 5;
     }
 
+    // Track direction for animation
+    this.pacmanSprite.lastDirection = pacman.direction;
+
     // Update animation based on direction
     if (this.pacmanSprite.anims) {
       const direction = pacman.direction.toLowerCase();
@@ -588,7 +592,7 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Set target positions for smooth interpolation
+    // Set target positions for smooth interpolation (only in same direction)
     this.pacmanSprite.targetX = targetX;
     this.pacmanSprite.targetY = targetY;
     this.pacmanEmoteText.targetX = targetX;
@@ -627,6 +631,7 @@ class GameScene extends Phaser.Scene {
         ghost.setDepth(1);
         ghost.x = targetX;
         ghost.y = targetY;
+        ghost.lastDirection = player.direction;
 
         // Add label showing username
         const labelText = player.ghostType === this.myGhostType ?
@@ -655,6 +660,9 @@ class GameScene extends Phaser.Scene {
           ghost.label.y = targetY - tileSize / 2 - 3;
         }
       }
+
+      // Track direction for animation
+      ghost.lastDirection = player.direction;
 
       // Update animation/color based on state and direction
       if (ghost.anims) {
