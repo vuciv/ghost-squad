@@ -34,6 +34,18 @@ const MAZE_LAYOUT = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 ];
 
+// Teleport tunnels on the left and right sides of the maze (row 17)
+const TELEPORT_POINTS = [
+  {
+    entry: { x: 0, y: 14 },   // Left side entrance
+    exit: { x: 27, y: 14 }     // Right side exit
+  },
+  {
+    entry: { x: 27, y: 14 },   // Right side entrance
+    exit: { x: 0, y: 14 }      // Left side exit
+  }
+];
+
 // Starting positions (at tile centers, same as dots/pellets)
 const STARTING_POSITIONS = {
   pacman: { x: 14, y: 23 },
@@ -46,11 +58,12 @@ const STARTING_POSITIONS = {
 
 // Export for Node.js
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { MAZE_LAYOUT, STARTING_POSITIONS };
+  module.exports = { MAZE_LAYOUT, STARTING_POSITIONS, TELEPORT_POINTS };
 }
 
 // Export for browser (make globally available)
 if (typeof window !== 'undefined') {
   window.MAZE_LAYOUT = MAZE_LAYOUT;
   window.STARTING_POSITIONS = STARTING_POSITIONS;
+  window.TELEPORT_POINTS = TELEPORT_POINTS;
 }

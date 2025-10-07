@@ -41,21 +41,6 @@ class GameScene extends Phaser.Scene {
     this.roomCode = null;
     this.myGhostType = null;
     this.entities = new Map();
-    this.lastUpdateTime = 0;
-
-    // Client-side prediction for player
-    this.lastServerPosition = null;
-    this.predictedPosition = null;
-    this.currentDirection = null;
-    this.lastInputTime = 0;
-
-    // Client-side prediction for Pacman
-    this.pacmanLastServerPosition = null;
-    this.pacmanPredictedPosition = null;
-    this.pacmanDirection = null;
-
-    // Client-side prediction for remote ghosts
-    this.remotePredictions = new Map(); // socketId -> {predicted, server, direction}
   }
 
   init(data) {
@@ -85,9 +70,6 @@ class GameScene extends Phaser.Scene {
     // Create animations for sprites
     this.createAnimations();
 
-    // Cache movement speed so it stays in sync with server pacing
-    this.moveSpeed = this.computeMoveSpeed();
-
     // Setup input
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = {
@@ -112,10 +94,6 @@ class GameScene extends Phaser.Scene {
       }
 
       if (direction) {
-        // Update current direction for prediction
-        this.currentDirection = direction;
-        this.lastInputTime = Date.now();
-
         // Send to server
         this.socket.emit('playerInput', {
           roomCode: this.roomCode,
@@ -190,56 +168,43 @@ class GameScene extends Phaser.Scene {
 
     const tileSize = GAME_CONSTANTS.TILE_SIZE;
 
-    // Hardcoded maze layout
-    const MAZE = [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
-      [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
-      [0,2,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,2,0],
-      [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
-      [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-      [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
-      [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
-      [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
-      [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,0,0,0,3,3,0,0,0,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1,1,1,1,0,3,3,3,3,3,3,0,1,1,1,1,1,1,1,1,1,1],
-      [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
-      [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
-      [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
-      [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
-      [0,2,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,2,0],
-      [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
-      [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
-      [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
-      [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
-      [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
-      [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ];
+    // Draw teleport tunnel indicators
+    if (window.TELEPORT_POINTS) {
+      window.TELEPORT_POINTS.forEach(teleport => {
+        const entryX = teleport.entry.x * tileSize + tileSize / 2;
+        const entryY = teleport.entry.y * tileSize + tileSize / 2;
+        
+        // Draw a glowing circle at teleport entry points
+        const teleportCircle = this.add.circle(entryX, entryY, tileSize / 3, 0x00ffff, 0.3);
+        teleportCircle.setDepth(0);
+        
+        // Add pulsing animation
+        this.tweens.add({
+          targets: teleportCircle,
+          alpha: { from: 0.3, to: 0.6 },
+          scale: { from: 1, to: 1.2 },
+          duration: 800,
+          yoyo: true,
+          repeat: -1
+        });
+      });
+    }
 
     // Draw walls with lines (classic Pacman style)
     this.mazeGraphics.lineStyle(3, 0x2121de, 1);
 
-    for (let y = 0; y < MAZE.length; y++) {
-      for (let x = 0; x < MAZE[y].length; x++) {
-        const cell = MAZE[y][x];
+    for (let y = 0; y < CLIENT_MAZE.length; y++) {
+      for (let x = 0; x < CLIENT_MAZE[y].length; x++) {
+        const cell = CLIENT_MAZE[y][x];
         const px = x * tileSize;
         const py = y * tileSize;
 
         if (cell === 0) {
           // Wall - draw borders where adjacent to walkable space
-          const top = y > 0 && MAZE[y - 1][x] !== 0;
-          const bottom = y < MAZE.length - 1 && MAZE[y + 1][x] !== 0;
-          const left = x > 0 && MAZE[y][x - 1] !== 0;
-          const right = x < MAZE[y].length - 1 && MAZE[y][x + 1] !== 0;
+          const top = y > 0 && CLIENT_MAZE[y - 1][x] !== 0;
+          const bottom = y < CLIENT_MAZE.length - 1 && CLIENT_MAZE[y + 1][x] !== 0;
+          const left = x > 0 && CLIENT_MAZE[y][x - 1] !== 0;
+          const right = x < CLIENT_MAZE[y].length - 1 && CLIENT_MAZE[y][x + 1] !== 0;
 
           if (top) {
             this.mazeGraphics.strokeLineShape(new Phaser.Geom.Line(px, py, px + tileSize, py));
@@ -524,47 +489,42 @@ class GameScene extends Phaser.Scene {
 
   updatePacman(pacman) {
     const tileSize = GAME_CONSTANTS.TILE_SIZE;
-    const serverX = pacman.position.x * tileSize + tileSize / 2;
-    const serverY = pacman.position.y * tileSize + tileSize / 2;
-
-    const isNewPacman = !this.pacmanSprite;
+    const targetX = pacman.position.x * tileSize + tileSize / 2;
+    const targetY = pacman.position.y * tileSize + tileSize / 2;
 
     if (!this.pacmanSprite) {
       // Try to create sprite, fallback to circle if sprites not loaded
       try {
-        this.pacmanSprite = this.add.sprite(serverX, serverY, 'sprites', 34);
-        this.pacmanSprite.setScale(tileSize / 16); // Scale 16px sprite to tile size
+        this.pacmanSprite = this.add.sprite(targetX, targetY, 'sprites', 34);
+        this.pacmanSprite.setScale(tileSize / 16);
       } catch (e) {
-        // Fallback to circle if sprite doesn't exist
-        this.pacmanSprite = this.add.circle(
-          serverX,
-          serverY,
-          tileSize / 2 - 2,
-          0xffff00
-        );
+        this.pacmanSprite = this.add.circle(targetX, targetY, tileSize / 2 - 2, 0xffff00);
       }
       this.pacmanSprite.setDepth(1);
+      this.pacmanSprite.x = targetX;
+      this.pacmanSprite.y = targetY;
     }
 
     // Create emote text if it doesn't exist
     if (!this.pacmanEmoteText) {
-      this.pacmanEmoteText = this.add.text(
-        serverX,
-        serverY - tileSize / 2 - 5,
-        '',
-        { fontSize: '20px', fontFamily: 'Arial' }
-      );
+      this.pacmanEmoteText = this.add.text(targetX, targetY - tileSize / 2 - 5, '', 
+        { fontSize: '20px', fontFamily: 'Arial' });
       this.pacmanEmoteText.setOrigin(0.5);
       this.pacmanEmoteText.setDepth(3);
     }
 
-    // Store server position and direction for prediction
-    this.pacmanLastServerPosition = { x: pacman.position.x, y: pacman.position.y };
-    this.pacmanDirection = pacman.direction;
+    // Check if this is a teleportation (large distance jump)
+    const currentX = this.pacmanSprite.x;
+    const currentY = this.pacmanSprite.y;
+    const distSq = (targetX - currentX) ** 2 + (targetY - currentY) ** 2;
+    const teleportThreshold = (tileSize * 10) ** 2; // If moved more than 10 tiles, it's a teleport
 
-    // Initialize predicted position if needed
-    if (!this.pacmanPredictedPosition) {
-      this.pacmanPredictedPosition = { x: pacman.position.x, y: pacman.position.y };
+    if (distSq > teleportThreshold) {
+      // Instant teleport - snap to new position
+      this.pacmanSprite.x = targetX;
+      this.pacmanSprite.y = targetY;
+      this.pacmanEmoteText.x = targetX;
+      this.pacmanEmoteText.y = targetY - tileSize / 2 - 5;
     }
 
     // Update animation based on direction
@@ -576,18 +536,11 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Use predicted position for target (same as player ghost)
-    this.pacmanSprite.targetX = this.pacmanPredictedPosition.x * tileSize + tileSize / 2;
-    this.pacmanSprite.targetY = this.pacmanPredictedPosition.y * tileSize + tileSize / 2;
-
-    // Prevent jump on first frame
-    if (isNewPacman) {
-      this.pacmanSprite.x = this.pacmanSprite.targetX;
-      this.pacmanSprite.y = this.pacmanSprite.targetY;
-    }
-
-    this.pacmanEmoteText.targetX = this.pacmanSprite.targetX;
-    this.pacmanEmoteText.targetY = this.pacmanSprite.targetY - tileSize / 2 - 5;
+    // Set target positions for smooth interpolation
+    this.pacmanSprite.targetX = targetX;
+    this.pacmanSprite.targetY = targetY;
+    this.pacmanEmoteText.targetX = targetX;
+    this.pacmanEmoteText.targetY = targetY - tileSize / 2 - 5;
 
     // Update emote text
     if (pacman.emote !== undefined) {
@@ -605,41 +558,29 @@ class GameScene extends Phaser.Scene {
     };
 
     players.forEach(player => {
-      const serverX = player.position.x * tileSize + tileSize / 2;
-      const serverY = player.position.y * tileSize + tileSize / 2;
+      const targetX = player.position.x * tileSize + tileSize / 2;
+      const targetY = player.position.y * tileSize + tileSize / 2;
       let ghost = this.entities.get(player.socketId);
-
-      // Check if this is the local player's ghost
-      const isLocalPlayer = (player.socketId === this.socket.id);
 
       if (!ghost) {
         // Try to create sprite, fallback to circle if sprites not loaded
         try {
-          ghost = this.add.sprite(serverX, serverY, 'sprites', 64);
-          ghost.setScale(tileSize / 16); // Scale 16px sprite to tile size
+          ghost = this.add.sprite(targetX, targetY, 'sprites', 64);
+          ghost.setScale(tileSize / 16);
           ghost.ghostType = player.ghostType;
         } catch (e) {
-          // Fallback to circle if sprite doesn't exist
           const color = player.state === 'frightened' ? 0x0000ff : colors[player.ghostType];
-          ghost = this.add.circle(
-            serverX,
-            serverY,
-            tileSize / 2 - 2,
-            color
-          );
+          ghost = this.add.circle(targetX, targetY, tileSize / 2 - 2, color);
         }
         ghost.setDepth(1);
+        ghost.x = targetX;
+        ghost.y = targetY;
 
         // Add label showing username
         const labelText = player.ghostType === this.myGhostType ?
-          `YOU (${player.username})` :
-          player.username;
-        const label = this.add.text(
-          serverX,
-          serverY - tileSize / 2 - 3,
-          labelText,
-          { fontSize: '8px', color: '#fff', backgroundColor: '#000', padding: { x: 2, y: 1 } }
-        );
+          `YOU (${player.username})` : player.username;
+        const label = this.add.text(targetX, targetY - tileSize / 2 - 3, labelText,
+          { fontSize: '8px', color: '#fff', backgroundColor: '#000', padding: { x: 2, y: 1 } });
         label.setOrigin(0.5);
         label.setDepth(2);
         ghost.label = label;
@@ -647,9 +588,24 @@ class GameScene extends Phaser.Scene {
         this.entities.set(player.socketId, ghost);
       }
 
+      // Check if this is a teleportation (large distance jump)
+      const currentX = ghost.x;
+      const currentY = ghost.y;
+      const distSq = (targetX - currentX) ** 2 + (targetY - currentY) ** 2;
+      const teleportThreshold = (tileSize * 10) ** 2; // If moved more than 10 tiles, it's a teleport
+
+      if (distSq > teleportThreshold) {
+        // Instant teleport - snap to new position
+        ghost.x = targetX;
+        ghost.y = targetY;
+        if (ghost.label) {
+          ghost.label.x = targetX;
+          ghost.label.y = targetY - tileSize / 2 - 3;
+        }
+      }
+
       // Update animation/color based on state and direction
       if (ghost.anims) {
-        // Sprite-based ghost
         let animKey;
         if (player.state === 'frightened') {
           animKey = `${player.ghostType}_scared`;
@@ -674,56 +630,13 @@ class GameScene extends Phaser.Scene {
         }
       }
 
-      // Store server position and direction, use prediction for all ghosts
-      const isNewGhost = !this.entities.has(player.socketId) || !ghost.targetX;
+      // Set target positions for smooth interpolation
+      ghost.targetX = targetX;
+      ghost.targetY = targetY;
 
-      if (isLocalPlayer) {
-        // Store server position for local player
-        this.lastServerPosition = { x: player.position.x, y: player.position.y };
-
-        // If we have no predicted position, initialize it
-        if (!this.predictedPosition) {
-          this.predictedPosition = { x: player.position.x, y: player.position.y };
-        }
-
-        // Use predicted position directly for target
-        ghost.targetX = this.predictedPosition.x * tileSize + tileSize / 2;
-        ghost.targetY = this.predictedPosition.y * tileSize + tileSize / 2;
-
-        // Prevent jump on first frame by setting sprite position to target
-        if (isNewGhost) {
-          ghost.x = ghost.targetX;
-          ghost.y = ghost.targetY;
-        }
-      } else {
-        // Remote players: use prediction too for smooth movement
-        if (!this.remotePredictions.has(player.socketId)) {
-          this.remotePredictions.set(player.socketId, {
-            predicted: { x: player.position.x, y: player.position.y },
-            server: { x: player.position.x, y: player.position.y },
-            direction: player.direction
-          });
-        }
-
-        const remotePred = this.remotePredictions.get(player.socketId);
-        remotePred.server = { x: player.position.x, y: player.position.y };
-        remotePred.direction = player.direction;
-
-        // Use predicted position for target
-        ghost.targetX = remotePred.predicted.x * tileSize + tileSize / 2;
-        ghost.targetY = remotePred.predicted.y * tileSize + tileSize / 2;
-
-        // Prevent jump on first frame by setting sprite position to target
-        if (isNewGhost) {
-          ghost.x = ghost.targetX;
-          ghost.y = ghost.targetY;
-        }
-      }
-
-      // Update label targets for all ghosts
       if (ghost.label) {
-        ghost.label.targetX = ghost.targetX;
-        ghost.label.targetY = ghost.targetY - tileSize / 2 - 3;
+        ghost.label.targetX = targetX;
+        ghost.label.targetY = targetY - tileSize / 2 - 3;
       }
     });
   }
@@ -754,70 +667,8 @@ class GameScene extends Phaser.Scene {
 
 
   update(time, delta) {
-    const deltaSeconds = delta / 1000;
-
-    // Server speed: 1 tile per 150ms = 6.67 tiles/sec
-    const tilesPerSecond = 1000 / 150;
-    const predictionSpeed = tilesPerSecond * deltaSeconds;
-
-    // Very gentle reconciliation to avoid inch-worm effect
-    const reconciliationStrength = 0.05;
-
-    // Update predicted position for player ghost
-    if (this.currentDirection && this.lastServerPosition && this.predictedPosition) {
-      const dir = GAME_CONSTANTS.DIRECTIONS[this.currentDirection];
-      if (dir) {
-        const nextX = this.predictedPosition.x + dir.x * predictionSpeed;
-        const nextY = this.predictedPosition.y + dir.y * predictionSpeed;
-
-        if (this.isWalkable(nextX, nextY)) {
-          this.predictedPosition.x = nextX;
-          this.predictedPosition.y = nextY;
-        }
-
-        this.predictedPosition.x += (this.lastServerPosition.x - this.predictedPosition.x) * reconciliationStrength;
-        this.predictedPosition.y += (this.lastServerPosition.y - this.predictedPosition.y) * reconciliationStrength;
-      }
-    }
-
-    // Update predicted position for Pacman
-    if (this.pacmanDirection && this.pacmanLastServerPosition && this.pacmanPredictedPosition) {
-      const dir = GAME_CONSTANTS.DIRECTIONS[this.pacmanDirection];
-      if (dir) {
-        const nextX = this.pacmanPredictedPosition.x + dir.x * predictionSpeed;
-        const nextY = this.pacmanPredictedPosition.y + dir.y * predictionSpeed;
-
-        if (this.isWalkable(nextX, nextY)) {
-          this.pacmanPredictedPosition.x = nextX;
-          this.pacmanPredictedPosition.y = nextY;
-        }
-
-        this.pacmanPredictedPosition.x += (this.pacmanLastServerPosition.x - this.pacmanPredictedPosition.x) * reconciliationStrength;
-        this.pacmanPredictedPosition.y += (this.pacmanLastServerPosition.y - this.pacmanPredictedPosition.y) * reconciliationStrength;
-      }
-    }
-
-    // Update predicted positions for remote ghosts
-    for (const [socketId, pred] of this.remotePredictions.entries()) {
-      if (pred.direction && pred.server && pred.predicted) {
-        const dir = GAME_CONSTANTS.DIRECTIONS[pred.direction];
-        if (dir) {
-          const nextX = pred.predicted.x + dir.x * predictionSpeed;
-          const nextY = pred.predicted.y + dir.y * predictionSpeed;
-
-          if (this.isWalkable(nextX, nextY)) {
-            pred.predicted.x = nextX;
-            pred.predicted.y = nextY;
-          }
-
-          pred.predicted.x += (pred.server.x - pred.predicted.x) * reconciliationStrength;
-          pred.predicted.y += (pred.server.y - pred.predicted.y) * reconciliationStrength;
-        }
-      }
-    }
-
-    // Smooth interpolation - higher lerp for fluid movement
-    const lerpFactor = 0.3; // More aggressive for smoothness
+    // Smooth interpolation for visual rendering
+    const lerpFactor = 0.25;
 
     // Update Pacman sprite
     if (this.pacmanSprite && typeof this.pacmanSprite.targetX !== 'undefined') {
@@ -842,18 +693,6 @@ class GameScene extends Phaser.Scene {
         }
       }
     }
-  }
-
-  computeMoveSpeed() {
-    const ticksPerMove = ((GAME_CONSTANTS.MOVE_COOLDOWN_TICKS ?? 1) + 1);
-    const msPerMove = ticksPerMove * GAME_CONSTANTS.TICK_RATE;
-
-    if (!msPerMove) {
-      return 220; // fallback if constants are missing
-    }
-
-    const basePixelsPerSecond = GAME_CONSTANTS.TILE_SIZE / (msPerMove / 1000);
-    return basePixelsPerSecond * 1.2; // Smooth interpolation speed
   }
 }
 

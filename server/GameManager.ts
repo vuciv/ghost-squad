@@ -26,9 +26,9 @@ class GameManager {
     return code;
   }
 
-  createRoom(): string {
+  createRoom(logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO'): string {
     const roomCode = this.generateRoomCode();
-    const game = new Game(roomCode, this.io);
+    const game = new Game(roomCode, this.io, logLevel);
     this.games.set(roomCode, game);
 
     // Clean up game after it ends

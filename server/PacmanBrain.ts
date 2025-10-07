@@ -1,35 +1,39 @@
 /**
- * PacmanBrain - Advanced AI using Minimax Algorithm with Alpha-Beta Pruning
+ * PacmanBrain - Advanced AI using Predictive Lookahead with Heuristic Ghost Prediction
  * 
- * This is the "final boss" of game AI implementations. Instead of just looking
- * one move ahead, Pac-Man now thinks multiple moves into the future, considering
- * how ghosts will respond to each move.
+ * This AI uses a "projection-based" approach rather than true minimax. It looks ahead
+ * multiple moves into the future by predicting the most likely ghost moves, then
+ * evaluates which path leads to the best outcome.
  * 
- * HOW MINIMAX WORKS:
- * 1. Pac-Man (Maximizer) explores all possible moves
- * 2. For each move, it simulates the ghosts (Minimizers) responding optimally
- * 3. This creates a game tree of future possibilities
- * 4. Pac-Man chooses the path that guarantees the best outcome, even if ghosts play perfectly
+ * HOW IT WORKS:
+ * 1. Pac-Man explores all possible moves at each decision point (branching)
+ * 2. For ghost moves, it predicts their most likely action (single path, no branching)
+ * 3. This creates a tree that branches only for Pac-Man's moves, not ghost moves
+ * 4. Pac-Man chooses the path with the best projected outcome
+ * 
+ * WHY NOT TRUE MINIMAX?
+ * True minimax would explore ALL possible ghost move combinations (4 ghosts × 4 moves = 256
+ * branches per ghost turn). This is computationally infeasible for real-time gameplay.
+ * By predicting a single "most likely" ghost move, we trade perfect adversarial reasoning
+ * for practical real-time performance.
  * 
  * EXAMPLE:
- * Without Minimax: "This hallway looks safe right now"
- * With Minimax: "If I go down this hallway, the ghosts will move to block the exit in 3 moves - trap!"
- * 
- * ALPHA-BETA PRUNING:
- * To make this fast enough for real-time gameplay, we use alpha-beta pruning to skip
- * branches that can't possibly be better than what we've already found.
+ * Without lookahead: "This hallway looks safe right now"
+ * With lookahead: "If I go down this hallway, the ghosts will likely block the exit in 3 moves - trap!"
  * 
  * CONFIGURATION:
- * - Default search depth: 3 (looks 3 moves ahead)
+ * - Default search depth: 12 (looks 12 moves ahead - excellent long-range planning)
  * - Adjustable via setSearchDepth(depth) method
- * - Higher depth = smarter but slower (recommended 2-4 for real-time)
- * 
+ * - Range: 1-20 (depth 15-20 allows seeing pellets across entire maze)
+ * - Strong directional stability to prevent dithering
+ *
  * PERFORMANCE:
- * With alpha-beta pruning, the AI evaluates hundreds to thousands of game states
- * per decision, typically completing in 10-50ms on modern hardware.
+ * With predictive lookahead (not true minimax), even depth 12-15 evaluates only thousands
+ * of nodes per decision, completing in 10-50ms on modern hardware. The single-path ghost
+ * prediction keeps the search tree manageable even at high depths.
  */
 
-import { MAZE_LAYOUT, Position } from '../shared/maze';
+import { MAZE_LAYOUT, TELEPORT_POINTS, Position } from '../shared/maze';
 import CONSTANTS = require('../shared/constants');
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
@@ -48,8 +52,19 @@ interface CostWeights {
   explorationBonus: number;  // Bonus for exploring new areas
 }
 
+interface HeuristicWeights {
+  GHOST_DANGER: number;
+  CHOKE_POINT_DANGER: number;
+  OPEN_SPACE_BONUS: number;
+  FRIGHTENED_BONUS: number;
+  POWER_PELLET_URGENCY: number;
+  PROGRESS_BONUS: number;
+  DISTANCE_PENALTY: number;
+}
+
 interface GameState {
   pacmanPos: Position;
+  previousPacmanPos: Position;  // Track previous position for swap detection
   ghosts: Ghost[];
   dots: Position[];
   powerPellets: Position[];
@@ -59,14 +74,16 @@ interface GameState {
 declare namespace PacmanBrain {
   export interface DirectionDebugInfo {
     direction: Direction;
-    cost: number;
     isWalkable: boolean;
+    finalScore: number;
     breakdown: {
-      baseCost: number;
-      dotAttraction: number;
-      pelletAttraction: number;
-      ghostInfluence: number;
-      visitPenalty: number;
+      ghostDanger: number;
+      chokePointDanger: number;
+      positionalAdvantage: number;
+      frightenedGhostBonus: number;
+      powerPelletUrgency: number;
+      progressScore: number;
+      distanceToFood: number;
     };
   }
 
@@ -74,7 +91,7 @@ declare namespace PacmanBrain {
     position: Position;
     directions: DirectionDebugInfo[];
     chosenDirection: Direction | null;
-    weights: CostWeights;
+    weights: HeuristicWeights;
     isFrightened: boolean;
   }
 }
@@ -83,25 +100,127 @@ class PacmanBrain {
   private maze: number[][];
   private searchDepth: number;
   private nodesEvaluated: number; // For debugging/performance tracking
+  private weights: HeuristicWeights;
+  private logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
-  constructor(searchDepth: number = 3) {
+  constructor(searchDepth: number = 12, weights: Partial<HeuristicWeights> = {}, logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO') {
     this.maze = MAZE_LAYOUT;
-    this.searchDepth = searchDepth; // How many moves ahead to look
+    this.searchDepth = Math.max(1, Math.min(searchDepth, 20)); // Clamp to 1-20 for deep planning
     this.nodesEvaluated = 0;
+    this.logLevel = logLevel;
+
+    // ULTRA-DEFENSIVE weights - survival is everything
+    // These weights prioritize staying alive above all else
+    this.weights = {
+      GHOST_DANGER: -2500,          // EXTREME danger avoidance - never get close
+      CHOKE_POINT_DANGER: -800,     // Heavily avoid getting trapped
+      OPEN_SPACE_BONUS: 80,         // CRITICAL: always maintain escape routes
+      FRIGHTENED_BONUS: 1200,       // Aggressively hunt during power pellet mode
+      POWER_PELLET_URGENCY: 6000,   // Life-saving priority
+      PROGRESS_BONUS: 200,          // Collect pellets, but survival is paramount
+      DISTANCE_PENALTY: -3,         // Gentle pull toward food
+      ...weights
+    };
   }
 
-  // Manhattan distance heuristic
+  // Logging methods
+  private log(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', message: string, data?: any): void {
+    const levels = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+    if (levels[level] >= levels[this.logLevel]) {
+      const timestamp = new Date().toISOString();
+      const logMessage = `[${timestamp}] [${level}] [PacmanBrain] ${message}`;
+      if (data) {
+        console.log(logMessage, data);
+      } else {
+        console.log(logMessage);
+      }
+    }
+  }
+
+  private logDecisionContext(pacmanPos: Position, ghosts: Ghost[], dots: Position[], powerPellets: Position[], isFrightened: boolean): void {
+    this.log('DEBUG', '=== DECISION CONTEXT ===', {
+      pacmanPosition: pacmanPos,
+      ghostCount: ghosts.length,
+      ghosts: ghosts.map(g => ({
+        position: g.position,
+        direction: g.direction,
+        isFrightened: g.isFrightened
+      })),
+      dotsRemaining: dots.length,
+      powerPelletsRemaining: powerPellets.length,
+      isFrightenedMode: isFrightened,
+      searchDepth: this.searchDepth
+    });
+  }
+
+  private logHeuristicBreakdown(direction: Direction, breakdown: any, finalScore: number): void {
+    this.log('DEBUG', `Heuristic breakdown for ${direction}:`, {
+      direction,
+      finalScore,
+      breakdown: {
+        ghostDanger: breakdown.ghostDanger.toFixed(2),
+        chokePointDanger: breakdown.chokePointDanger.toFixed(2),
+        positionalAdvantage: breakdown.positionalAdvantage.toFixed(2),
+        frightenedGhostBonus: breakdown.frightenedGhostBonus.toFixed(2),
+        powerPelletUrgency: breakdown.powerPelletUrgency.toFixed(2),
+        progressScore: breakdown.progressScore.toFixed(2),
+        distanceToFood: breakdown.distanceToFood.toFixed(2)
+      }
+    });
+  }
+
+  private logDecisionResult(chosenDirection: Direction | null, allScores: Map<Direction, number>, reasoning: string): void {
+    this.log('INFO', `=== DECISION MADE ===`, {
+      chosenDirection,
+      reasoning,
+      allScores: Object.fromEntries(allScores),
+      nodesEvaluated: this.nodesEvaluated
+    });
+  }
+
+  // Manhattan distance heuristic (considers teleportation as a shortcut)
   heuristic(a: Position, b: Position): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    const directDist = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    
+    // Check if using a teleport would be faster
+    // For each teleport pair, calculate: distance to entry + 1 (teleport cost) + distance from exit to target
+    let minTeleportDist = Infinity;
+    for (const teleport of TELEPORT_POINTS) {
+      const distToEntry = Math.abs(a.x - teleport.entry.x) + Math.abs(a.y - teleport.entry.y);
+      const distFromExit = Math.abs(teleport.exit.x - b.x) + Math.abs(teleport.exit.y - b.y);
+      const teleportDist = distToEntry + 1 + distFromExit; // +1 for the teleport move
+      minTeleportDist = Math.min(minTeleportDist, teleportDist);
+    }
+    
+    // Return the shorter of direct distance or teleport distance
+    return Math.min(directDist, minTeleportDist);
   }
 
-  // Helper: Get position after moving in a direction
+  // Helper: Get position after moving in a direction (includes teleportation)
   getPositionFromMove(pos: Position, direction: Direction): Position {
     const dirVec = CONSTANTS.DIRECTIONS[direction];
-    return {
+    const newPos = {
       x: pos.x + dirVec.x,
       y: pos.y + dirVec.y
     };
+
+    // Check if this move would take us to a teleport entry point
+    const teleportExit = this.checkTeleport(newPos);
+    if (teleportExit) {
+      return teleportExit;
+    }
+
+    return newPos;
+  }
+
+  // Check if a position is a teleport entry point and return the exit position
+  private checkTeleport(pos: Position): Position | null {
+    for (const teleport of TELEPORT_POINTS) {
+      if (pos.x === teleport.entry.x && pos.y === teleport.entry.y) {
+        return teleport.exit;
+      }
+    }
+    return null;
   }
 
   // Helper: Check if a position is walkable
@@ -110,31 +229,160 @@ class PacmanBrain {
         pos.y < 0 || pos.y >= CONSTANTS.GRID_HEIGHT) {
       return false;
     }
+    // Ensure the row exists before accessing the column
+    if (!this.maze[pos.y]) {
+      return false;
+    }
     // Walkable: not a wall (0)
     return this.maze[pos.y][pos.x] !== 0;
   }
 
-  // Predict where a ghost will move next
-  // Ghosts prefer to continue in their current direction, but will choose
-  // a new direction if blocked or if a better path to Pac-Man is available
-  predictGhostNextMove(ghost: Ghost, pacmanPos: Position): Position {
-    // First, try to continue in the current direction
-    const currentDirPos = this.getPositionFromMove(ghost.position, ghost.direction);
+  // ===============================================
+  // HEURISTIC HELPER FUNCTIONS
+  // ===============================================
+  // These functions encapsulate the various scoring heuristics used by the AI.
+  // Each heuristic evaluates a specific aspect of the game state.
+
+  /**
+   * Check if the current state is a terminal state (win or loss).
+   * @returns Infinity for win, -Infinity for loss, or 0 if not terminal
+   */
+  private checkTerminalState(
+    pacmanPos: Position,
+    ghosts: Ghost[],
+    dots: Position[],
+    powerPellets: Position[]
+  ): number | null {
+    // WIN CONDITION: If there are no dots left, this is the best possible outcome.
+    if (dots.length === 0 && powerPellets.length === 0) {
+      return Infinity;
+    }
+
+    // LOSE CONDITION: If Pac-Man is on the same tile as a non-frightened ghost, it's game over.
+    for (const ghost of ghosts) {
+      if (!ghost.isFrightened && this.heuristic(pacmanPos, ghost.position) <= 1) {
+        return -Infinity;
+      }
+    }
+
+    return null; // Not a terminal state
+  }
+
+  /**
+   * Calculate ghost danger heuristic.
+   * Creates a "force field" around ghosts - the penalty grows as they get closer.
+   * @returns Negative score representing danger level from ghosts
+   */
+  private calculateGhostDanger(pacmanPos: Position, ghosts: Ghost[]): number {
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+    if (nonFrightenedGhosts.length === 0) {
+      this.log('DEBUG', 'No non-frightened ghosts, ghost danger = 0');
+      return 0; // No danger if all ghosts are frightened
+    }
+
+    const minGhostDist = Math.min(
+      ...nonFrightenedGhosts.map(g => this.heuristic(pacmanPos, g.position))
+    );
+
+    // Inverse distance creates exponential danger as ghosts approach
+    const danger = this.weights.GHOST_DANGER / (minGhostDist + 1);
     
-    // If current direction is walkable, ghosts usually continue that way
-    // (they don't change direction every tick)
+    this.log('DEBUG', 'Ghost danger calculated', {
+      pacmanPos,
+      nonFrightenedGhostCount: nonFrightenedGhosts.length,
+      minGhostDist: minGhostDist.toFixed(2),
+      danger: danger.toFixed(2),
+      weight: this.weights.GHOST_DANGER
+    });
+
+    return danger;
+  }
+
+  /**
+   * Calculate progress score heuristic.
+   * Rewards Pac-Man for eating dots during the lookahead simulation.
+   * @returns Positive score for each dot/pellet eaten
+   */
+  private calculateProgressScore(
+    dots: Position[],
+    powerPellets: Position[],
+    initialDotCount: number
+  ): number {
+    const currentFoodCount = dots.length + powerPellets.length;
+    const foodEaten = initialDotCount - currentFoodCount;
+
+    return foodEaten * this.weights.PROGRESS_BONUS;
+  }
+
+  /**
+   * Calculate frightened ghost bonus heuristic.
+   * Rewards Pac-Man for being close to vulnerable, frightened ghosts.
+   * @returns Positive score for proximity to frightened ghosts
+   */
+  private calculateFrightenedGhostBonus(pacmanPos: Position, ghosts: Ghost[]): number {
+    const frightenedGhosts = ghosts.filter(g => g.isFrightened);
+    if (frightenedGhosts.length === 0) {
+      return 0;
+    }
+
+    // We want the bonus to be higher the closer we are
+    const minFrightenedDist = Math.min(
+      ...frightenedGhosts.map(g => this.heuristic(pacmanPos, g.position))
+    );
+
+    // Similar to ghost danger, but provides a bonus instead of a penalty
+    return this.weights.FRIGHTENED_BONUS / (minFrightenedDist + 1);
+  }
+
+  /**
+   * Calculate distance-to-food heuristic.
+   * Encourages Pac-Man to move towards the closest food item.
+   * @returns Negative score proportional to distance to nearest food
+   */
+  private calculateDistanceToFoodScore(
+    pacmanPos: Position,
+    dots: Position[],
+    powerPellets: Position[]
+  ): number {
+    const allFood = [...dots, ...powerPellets];
+    if (allFood.length === 0) {
+      return 0; // No penalty if no food left
+    }
+
+    const minFoodDist = Math.min(
+      ...allFood.map(food => this.heuristic(pacmanPos, food))
+    );
+
+    return minFoodDist * this.weights.DISTANCE_PENALTY;
+  }
+
+  // ===============================================
+  // GHOST PREDICTION
+  // ===============================================
+
+  /**
+   * Predict where a ghost will move next.
+   * Ghosts prefer to continue in their current direction, but will choose
+   * a new direction if blocked or if a better path to Pac-Man is available.
+   */
+  predictGhostNextMove(ghost: Ghost, pacmanPos: Position): Position {
+    // Ghosts have STRONG directional inertia - they don't turn instantly
+    // This prevents the AI from thinking ghosts can perfectly intercept every escape route
+    const currentDirPos = this.getPositionFromMove(ghost.position, ghost.direction);
+
+    // If current direction is walkable, ghosts strongly prefer to continue
     if (this.isWalkable(currentDirPos)) {
-      // Check if continuing is reasonable (not moving away from Pac-Man significantly)
       const currentDist = this.heuristic(ghost.position, pacmanPos);
       const newDist = this.heuristic(currentDirPos, pacmanPos);
-      
-      // If not moving much farther away, keep current direction
-      if (newDist <= currentDist + 2) {
+
+      // Ghosts keep their direction unless moving MUCH farther away (tolerance: 5 tiles)
+      // This creates realistic "you can escape if you turn around" scenarios
+      if (newDist <= currentDist + 5) {
         return currentDirPos;
       }
     }
 
-    // If blocked or moving too far away, find best alternative
+    // Only change direction if really necessary (blocked or way off course)
     const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
     let bestMove = ghost.position;
     let minDistance = this.heuristic(ghost.position, pacmanPos);
@@ -153,121 +401,196 @@ class PacmanBrain {
     return bestMove;
   }
 
-  // Calculate the number of exits from a position (for dead-end detection)
-  private calculateExits(pos: Position): number {
-    const directions = [
-      { x: 0, y: -1 }, // up
-      { x: 0, y: 1 },  // down
-      { x: -1, y: 0 }, // left
-      { x: 1, y: 0 }   // right
-    ];
+  /**
+   * Calculates a bonus for being on a power pellet when a ghost is dangerously close.
+   * This teaches the AI to use power pellets as a defensive, life-saving tool.
+   * @returns A large positive score if the situation is urgent, otherwise 0.
+   */
+  private calculatePowerPelletUrgency(
+    pacmanPos: Position,
+    ghosts: Ghost[],
+    powerPellets: Position[]
+  ): number {
+    const URGENCY_RADIUS = 8; // How close a ghost must be to trigger the bonus.
 
+    // Check if Pac-Man is currently on a power pellet's location.
+    const isOnPellet = powerPellets.some(p => p.x === pacmanPos.x && p.y === pacmanPos.y);
+
+    if (!isOnPellet) {
+      this.log('DEBUG', 'Not on power pellet, urgency = 0');
+      return 0; // Not on a pellet, so no urgency bonus.
+    }
+
+    // Find the closest non-frightened ghost.
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+    if (nonFrightenedGhosts.length === 0) {
+      this.log('DEBUG', 'No non-frightened ghosts, urgency = 0');
+      return 0; // No danger, no urgency.
+    }
+
+    const minGhostDist = Math.min(
+      ...nonFrightenedGhosts.map(g => this.heuristic(pacmanPos, g.position))
+    );
+
+    // If a ghost is within the urgency radius, apply the bonus.
+    if (minGhostDist < URGENCY_RADIUS) {
+      // The closer the ghost, the larger the bonus.
+      const urgency = this.weights.POWER_PELLET_URGENCY / (minGhostDist + 1);
+      this.log('DEBUG', 'Power pellet urgency triggered!', {
+        pacmanPos,
+        minGhostDist: minGhostDist.toFixed(2),
+        urgencyRadius: URGENCY_RADIUS,
+        urgency: urgency.toFixed(2),
+        weight: this.weights.POWER_PELLET_URGENCY
+      });
+      return urgency;
+    }
+
+    this.log('DEBUG', 'On power pellet but ghost too far', {
+      pacmanPos,
+      minGhostDist: minGhostDist.toFixed(2),
+      urgencyRadius: URGENCY_RADIUS
+    });
+    return 0; // Ghost is too far away to be an urgent threat.
+  }
+
+   /**
+   * Performs a Breadth-First Search from a start position to find the number of
+   * reachable, unique, and safe tiles within a given depth.
+   * This measures how "open" or "cramped" a position is.
+   * @returns The number of safe tiles reachable, representing the escape route value.
+   */
+   private calculateEscapeRouteValue(startPos: Position, ghosts: Ghost[]): number {
+    const searchDepth = 6; // How far ahead to check for open space.
+    const ghostDangerRadius = 3; // Avoid counting tiles too close to a ghost.
+    
+    const queue: { pos: Position; depth: number }[] = [{ pos: startPos, depth: 0 }];
+    const visited = new Set<string>([`${startPos.x},${startPos.y}`]);
+    let reachableTiles = 0;
+
+    // Pre-calculate ghost positions for efficiency
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+
+    while (queue.length > 0) {
+      const { pos, depth } = queue.shift()!;
+
+      if (depth >= searchDepth) continue;
+
+      reachableTiles++;
+
+      const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+      for (const dir of directions) {
+        const nextPos = this.getPositionFromMove(pos, dir);
+        const posKey = `${nextPos.x},${nextPos.y}`;
+
+        if (this.isWalkable(nextPos) && !visited.has(posKey)) {
+          // Check if the next position is too close to a ghost
+          const isSafe = nonFrightenedGhosts.every(
+            g => this.heuristic(nextPos, g.position) > ghostDangerRadius
+          );
+
+          if (isSafe) {
+            visited.add(posKey);
+            queue.push({ pos: nextPos, depth: depth + 1 });
+          }
+        }
+      }
+    }
+    return reachableTiles;
+  }
+
+  /**
+   * Calculates a bonus for being in a strategically advantageous position
+   * with plenty of room to maneuver.
+   * @returns A positive score proportional to the number of safe escape routes.
+   */
+  private calculatePositionalAdvantage(pacmanPos: Position, ghosts: Ghost[]): number {
+    const escapeRouteValue = this.calculateEscapeRouteValue(pacmanPos, ghosts);
+    return escapeRouteValue * this.weights.OPEN_SPACE_BONUS;
+  }
+
+  /**
+   * Calculates a penalty based on how well ghosts are controlling
+   * the intersections (choke points) near Pac-Man.
+   * @returns A negative score representing the strategic threat from ghosts.
+   */
+  private calculateChokePointDanger(pacmanPos: Position, ghosts: Ghost[]): number {
+    const CHECK_RADIUS = 7; // How far from Pac-Man to check for intersections.
+
+    let totalDanger = 0;
+    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
+    if (nonFrightenedGhosts.length === 0) return 0;
+
+    // Find all intersections near Pac-Man
+    for (let x = pacmanPos.x - CHECK_RADIUS; x < pacmanPos.x + CHECK_RADIUS; x++) {
+      for (let y = pacmanPos.y - CHECK_RADIUS; y < pacmanPos.y + CHECK_RADIUS; y++) {
+        const pos = { x, y };
+        if (this.isWalkable(pos) && this.calculateExits(pos) > 2) {
+          // This is an intersection. How close is the nearest ghost to it?
+          const distToGhost = Math.min(
+            ...nonFrightenedGhosts.map(g => this.heuristic(pos, g.position))
+          );
+          // The closer a ghost is to this intersection, the more danger it represents.
+          totalDanger += this.weights.CHOKE_POINT_DANGER / (distToGhost + 1);
+        }
+      }
+    }
+    return totalDanger;
+  }
+
+  // We need this helper function from before
+  private calculateExits(pos: Position): number {
+    const directions = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
     let exitCount = 0;
     for (const dir of directions) {
-      const newPos = { x: pos.x + dir.x, y: pos.y + dir.y };
-      if (this.isWalkable(newPos)) {
+      if (this.isWalkable(this.getPositionFromMove(pos, dir as Direction))) {
         exitCount++;
       }
     }
     return exitCount;
   }
 
-  // The heart of the AI - evaluate a future game state
+  // ===============================================
+  // STATE EVALUATION
+  // ===============================================
+
+  /**
+   * The heart of the AI - evaluate a future game state.
+   * Combines multiple heuristics to produce a single score.
+   *
+   * TIERED EVALUATION SYSTEM:
+   * - includeExpensiveHeuristics = false: Only fast heuristics (for deep nodes)
+   * - includeExpensiveHeuristics = true: All heuristics (for root-level moves)
+   */
   evaluateState(
     pacmanPos: Position,
     ghosts: Ghost[],
     dots: Position[],
     powerPellets: Position[],
-    positionHistory: Position[] = [],
-    initialDotCount: number
+    initialDotCount: number,
+    includeExpensiveHeuristics: boolean = true
   ): number {
-    // Check for immediate death - this is the worst possible outcome
-    for (const ghost of ghosts) {
-      const dist = this.heuristic(pacmanPos, ghost.position);
-      if (dist <= 1 && !ghost.isFrightened) {
-        return -Infinity; // Game over!
-      }
+    // Priority 1: Check for terminal states (win/loss)
+    const terminalValue = this.checkTerminalState(pacmanPos, ghosts, dots, powerPellets);
+    if (terminalValue !== null) {
+      return terminalValue;
     }
 
-    // Weights to tune the AI's personality
-    const W_DOT_EATEN_BONUS = 200;      // NEW: Big, immediate reward for eating a dot in the simulation
-    const W_GHOST_DANGER = -1000;       // INCREASED: Survival is twice as important now.
-    const W_FRIGHTENED_BONUS = 400;     // INCREASED: Make chasing a higher priority.
-    const W_POWER_PELLET_URGENCY = 1500;// INCREASED: This is a "get out of jail free" card.
-    const W_FOOD_PROGRESS = 5;          // DECREASED: A gentle nudge, not a primary driver.
-    const W_DEAD_END_PENALTY = -250;    // INCREASED: Make it really hate getting cornered.
-    const W_LOOP_PENALTY = -100;        // INCREASED: Discourage dithering more strongly.
-    
+    // Priority 2: Calculate score for non-terminal states
     let score = 0;
 
-    const dotsEaten = initialDotCount - dots.length;
-    score += dotsEaten * W_DOT_EATEN_BONUS;
+    // TIER 1: Fast heuristics (always calculated, even at deep nodes)
+    score += this.calculateGhostDanger(pacmanPos, ghosts);
+    score += this.calculateProgressScore(dots, powerPellets, initialDotCount);
+    score += this.calculateDistanceToFoodScore(pacmanPos, dots, powerPellets);
+    score += this.calculateFrightenedGhostBonus(pacmanPos, ghosts);
+    score += this.calculatePowerPelletUrgency(pacmanPos, ghosts, powerPellets);
 
-
-
-    // Calculate distance to nearest non-frightened ghost
-    const nonFrightenedGhosts = ghosts.filter(g => !g.isFrightened);
-    let minGhostDist = Infinity;
-    if (nonFrightenedGhosts.length > 0) {
-      minGhostDist = Math.min(...nonFrightenedGhosts.map(g => this.heuristic(pacmanPos, g.position)));
+    // TIER 2: Expensive heuristics (only for root-level evaluation)
+    if (includeExpensiveHeuristics) {
+      score += this.calculatePositionalAdvantage(pacmanPos, ghosts);  // BFS - expensive!
+      score += this.calculateChokePointDanger(pacmanPos, ghosts);     // Nested loops - expensive!
     }
-    // The penalty skyrockets as the ghost gets closer
-    if (minGhostDist < Infinity) {
-      score += W_GHOST_DANGER / (minGhostDist + 1);
-    }
-
-    // Calculate distance to nearest frightened ghost
-    const frightenedGhosts = ghosts.filter(g => g.isFrightened);
-    let minFrightenedDist = Infinity;
-    if (frightenedGhosts.length > 0) {
-      minFrightenedDist = Math.min(...frightenedGhosts.map(g => this.heuristic(pacmanPos, g.position)));
-      // Bonus for being close to a target
-      score += W_FRIGHTENED_BONUS / (minFrightenedDist + 1);
-    }
-
-    // POWER PELLET URGENCY: If a non-frightened ghost is very close and we're on a power pellet, huge bonus!
-    // This teaches the AI to use pellets as a defensive weapon
-    const isOnPowerPellet = powerPellets.some(p => p.x === pacmanPos.x && p.y === pacmanPos.y);
-    if (isOnPowerPellet && minGhostDist < 8 && minGhostDist !== Infinity) {
-      // The closer the ghost, the more urgent it is to grab the pellet
-      score += W_POWER_PELLET_URGENCY / (minGhostDist + 1);
-    }
-
-    // DEAD-END PENALTY: Positions with fewer exits are more dangerous
-    const exitCount = this.calculateExits(pacmanPos);
-    if (exitCount === 1) {
-      // Dead end - very dangerous, especially if ghosts are nearby
-      score += W_DEAD_END_PENALTY * 2;
-      // Extra penalty if ghost is close
-      if (minGhostDist < 10 && minGhostDist !== Infinity) {
-        score += W_DEAD_END_PENALTY / (minGhostDist + 1);
-      }
-    } else if (exitCount === 2) {
-      // Corridor - somewhat dangerous
-      score += W_DEAD_END_PENALTY * 0.5;
-      if (minGhostDist < 6 && minGhostDist !== Infinity) {
-        score += W_DEAD_END_PENALTY * 0.5 / (minGhostDist + 1);
-      }
-    }
-
-    // LOOP PREVENTION: Penalize positions we've recently visited
-    // Skip the most recent position (we're literally there now)
-    const posKey = `${pacmanPos.x},${pacmanPos.y}`;
-    const recentIndex = positionHistory.slice(0, -1).findIndex(p => `${p.x},${p.y}` === posKey);
-    if (recentIndex !== -1) {
-      // More recent = higher penalty (prevents wiggling back and forth)
-      const recency = (positionHistory.length - 1) - recentIndex;
-      score += W_LOOP_PENALTY * (recency / positionHistory.length);
-    }
-
-    // Calculate distance to nearest food
-    const allFood = [...dots, ...powerPellets];
-    let minFoodDist = 0;
-    if (allFood.length > 0) {
-      minFoodDist = Math.min(...allFood.map(food => this.heuristic(pacmanPos, food)));
-    }
-    // Closer to food = better score (subtract distance)
-    score -= minFoodDist * W_FOOD_PROGRESS;
 
     return score;
   }
@@ -276,6 +599,7 @@ class PacmanBrain {
   private cloneGameState(state: GameState): GameState {
     return {
       pacmanPos: { ...state.pacmanPos },
+      previousPacmanPos: { ...state.previousPacmanPos },
       ghosts: state.ghosts.map(g => ({
         position: { ...g.position },
         direction: g.direction,
@@ -290,11 +614,14 @@ class PacmanBrain {
   // Helper: Simulate Pac-Man moving in a direction (modifies state)
   private simulatePacmanMove(state: GameState, direction: Direction): boolean {
     const newPos = this.getPositionFromMove(state.pacmanPos, direction);
-    
+
     // Check if move is valid
     if (!this.isWalkable(newPos)) {
       return false;
     }
+
+    // Store previous position BEFORE moving (critical for swap detection!)
+    state.previousPacmanPos = { ...state.pacmanPos };
 
     // Update position
     state.pacmanPos = newPos;
@@ -325,11 +652,36 @@ class PacmanBrain {
   }
 
   // Helper: Simulate all ghosts moving (they move to minimize Pac-Man's score)
-  private simulateGhostMoves(state: GameState): void {
+  // Returns true if Pac-Man survives, false if collision/swap occurred
+  private simulateGhostMoves(state: GameState): boolean {
+    const currentPacmanPos = state.pacmanPos;
+    const previousPacmanPos = state.previousPacmanPos;
+
     for (const ghost of state.ghosts) {
-      const newPos = this.predictGhostNextMove(ghost, state.pacmanPos);
+      // Skip frightened ghosts for collision check
+      if (ghost.isFrightened) {
+        const newPos = this.predictGhostNextMove(ghost, currentPacmanPos);
+        ghost.position = newPos;
+        continue;
+      }
+
+      const ghostPreviousPos = ghost.position;
+      const newPos = this.predictGhostNextMove(ghost, currentPacmanPos);
       ghost.position = newPos;
+
+      // Check for collision: same tile after moves
+      if (newPos.x === currentPacmanPos.x && newPos.y === currentPacmanPos.y) {
+        return false; // COLLISION!
+      }
+
+      // Check for swap: they swapped positions
+      if (ghostPreviousPos.x === currentPacmanPos.x && ghostPreviousPos.y === currentPacmanPos.y &&
+          newPos.x === previousPacmanPos.x && newPos.y === previousPacmanPos.y) {
+        return false; // SWAP COLLISION!
+      }
     }
+
+    return true; // Survived
   }
 
   // Get all valid Pac-Man moves from a position
@@ -347,9 +699,10 @@ class PacmanBrain {
     return validMoves;
   }
 
-  // MINIMAX ALGORITHM WITH ALPHA-BETA PRUNING
-  // This is the "final boss" - Pac-Man thinks ahead multiple moves
-  private minimax(
+  // PREDICTIVE LOOKAHEAD ALGORITHM
+  // Pac-Man explores all his possible moves, but predicts single "most likely" ghost responses
+  // This is NOT true minimax - it's a single-path projection for each Pac-Man move
+  private predictiveLookahead(
     state: GameState,
     depth: number,
     alpha: number,
@@ -366,13 +719,13 @@ class PacmanBrain {
         state.ghosts,
         state.dots,
         state.powerPellets,
-        state.positionHistory,
-        initialDotCount
+        initialDotCount,
+        false  // Skip expensive heuristics at deep nodes for performance
       );
     }
 
     if (isMaximizingPlayer) {
-      // Pac-Man's turn - maximize score
+      // Pac-Man's turn - maximize score by exploring ALL possible moves
       let maxEval = -Infinity;
       const validMoves = this.getValidPacmanMoves(state.pacmanPos);
 
@@ -383,8 +736,8 @@ class PacmanBrain {
           state.ghosts,
           state.dots,
           state.powerPellets,
-          state.positionHistory,
-          initialDotCount
+          initialDotCount,
+          false  // Skip expensive heuristics for performance
         );
       }
 
@@ -395,11 +748,11 @@ class PacmanBrain {
           continue;
         }
 
-        // Recursively evaluate (now it's the ghosts' turn)
-        const evaluation = this.minimax(newState, depth - 1, alpha, beta, false, initialDotCount);
+        // Recursively evaluate (now predict ghost responses)
+        const evaluation = this.predictiveLookahead(newState, depth - 1, alpha, beta, false, initialDotCount);
         maxEval = Math.max(maxEval, evaluation);
 
-        // Alpha-beta pruning
+        // Alpha-beta pruning (still useful even with single ghost path)
         alpha = Math.max(alpha, evaluation);
         if (beta <= alpha) {
           break; // Beta cutoff
@@ -408,52 +761,68 @@ class PacmanBrain {
 
       return maxEval;
     } else {
-      // Ghosts' turn - minimize Pac-Man's score
-      let minEval = Infinity;
-
-      // Clone state and simulate ghost moves
+      // Ghost prediction phase - predict SINGLE most likely ghost response (no branching)
+      // This is the key difference from true minimax!
       const newState = this.cloneGameState(state);
-      this.simulateGhostMoves(newState);
+      const survived = this.simulateGhostMoves(newState); // Predicts one outcome and checks for collision/swap
 
-      // Recursively evaluate (back to Pac-Man's turn)
-      const evaluation = this.minimax(newState, depth - 1, alpha, beta, true, initialDotCount);
-      minEval = Math.min(minEval, evaluation);
+      // If collision/swap detected, return instant death penalty
+      if (!survived) {
+        return -100000; // Catastrophic score - Pac-Man dies
+      }
 
-      // Alpha-beta pruning
-      beta = Math.min(beta, evaluation);
+      // Continue lookahead (back to Pac-Man's turn)
+      const evaluation = this.predictiveLookahead(newState, depth - 1, alpha, beta, true, initialDotCount);
 
-      return minEval;
+      return evaluation;
     }
   }
 
-  // Find best move using Minimax algorithm with inertia
-  private findBestMoveWithMinimax(state: GameState, currentDirection: Direction): Direction | null {
+  // Find best move using Predictive Lookahead algorithm with inertia
+  private findBestMoveWithLookahead(
+    state: GameState,
+    currentDirection: Direction
+  ): { bestMove: Direction | null; moveValues: Map<Direction, number> } {
     this.nodesEvaluated = 0;
     const startTime = Date.now();
+
+    this.log('DEBUG', 'Starting lookahead search', {
+      pacmanPosition: state.pacmanPos,
+      currentDirection,
+      searchDepth: this.searchDepth
+    });
 
     let bestMove: Direction | null = null;
     let bestValue = -Infinity;
     const validMoves = this.getValidPacmanMoves(state.pacmanPos);
     
+    this.log('DEBUG', 'Valid moves found', { validMoves });
+    
     // Store the value of each move
     const moveValues = new Map<Direction, number>();
     
     // Capture the true initial dot count from the start of the turn
-    const initialDotCount = state.dots.length;
+    const initialDotCount = state.dots.length + state.powerPellets.length;
 
     if (validMoves.length === 0) {
-      return null;
+      this.log('WARN', 'No valid moves available!');
+      return { bestMove: null, moveValues };
     }
 
     for (const move of validMoves) {
       // Clone state and simulate Pac-Man's move
       const newState = this.cloneGameState(state);
       if (!this.simulatePacmanMove(newState, move)) {
+        this.log('DEBUG', `Move ${move} is not walkable, skipping`);
         continue;
       }
 
-      // Run minimax from this state (ghosts move next)
-      const moveValue = this.minimax(
+      this.log('DEBUG', `Evaluating move ${move}`, {
+        newPosition: newState.pacmanPos
+      });
+
+      // Run predictive lookahead from this state (ghosts predicted next)
+      const moveValue = this.predictiveLookahead(
         newState,
         this.searchDepth - 1,
         -Infinity,
@@ -463,53 +832,68 @@ class PacmanBrain {
       );
       
       moveValues.set(move, moveValue);
+      this.log('DEBUG', `Move ${move} scored ${moveValue.toFixed(2)}`);
 
       if (moveValue > bestValue) {
         bestValue = moveValue;
         bestMove = move;
+        this.log('DEBUG', `New best move: ${move} with score ${moveValue.toFixed(2)}`);
       }
     }
 
-    // --- INERTIA LOGIC ---
-    // Log all move scores for debugging
-    console.log('Move scores:', Array.from(moveValues.entries()).map(([dir, val]) => `${dir}=${val.toFixed(2)}`).join(', '));
-    console.log(`Current direction: ${currentDirection}, Best move before inertia: ${bestMove}`);
+    // --- TIER 2: Add expensive heuristics for root-level moves only ---
+    // These were skipped during deep search for performance, but are important for final decision
+    this.log('DEBUG', 'Adding expensive heuristics to root-level moves');
+    for (const [move, deepScore] of moveValues.entries()) {
+      // Simulate the move to get the resulting position
+      const moveState = this.cloneGameState(state);
+      if (!this.simulatePacmanMove(moveState, move)) {
+        continue;
+      }
+
+      // Calculate only the expensive heuristics for this immediate position
+      const expensiveScore =
+        this.calculatePositionalAdvantage(moveState.pacmanPos, moveState.ghosts) +
+        this.calculateChokePointDanger(moveState.pacmanPos, moveState.ghosts);
+
+      // Add expensive heuristics to the deep search score
+      const totalScore = deepScore + expensiveScore;
+      moveValues.set(move, totalScore);
+
+      this.log('DEBUG', `Move ${move}: deepScore=${deepScore.toFixed(2)}, expensive=${expensiveScore.toFixed(2)}, total=${totalScore.toFixed(2)}`);
+
+      // Update best move if needed
+      if (totalScore > bestValue) {
+        bestValue = totalScore;
+        bestMove = move;
+      }
+    }
+
+    // --- NO STABILIZATION: Always choose the absolute best move ---
+    // Directional stability was causing suicide by making Pac-Man stick to dangerous paths
+    // The deep lookahead (depth 12+) is smart enough to avoid dithering naturally
+    this.log('DEBUG', 'Best move chosen purely on evaluation score', {
+      bestMove,
+      bestValue: bestValue.toFixed(2),
+      allMoveScores: Object.fromEntries(moveValues)
+    });
+
+    const endTime = Date.now();
+    const processingTime = endTime - startTime;
     
-    // Check if continuing straight is a valid and "good enough" move
-    // Moderate threshold (0.85 = accept if within 15% of best) to prevent dithering
-    // while still allowing course correction for important decisions
-    const inertiaThreshold = 0.85; // Accept current direction if it's within 15% of the best
-    const currentValue = moveValues.get(currentDirection);
+    this.log('INFO', 'Lookahead search completed', {
+      chosenMove: bestMove,
+      processingTime: `${processingTime}ms`,
+      nodesEvaluated: this.nodesEvaluated,
+      allMoveValues: Object.fromEntries(moveValues)
+    });
 
-    if (currentValue !== undefined && bestValue !== -Infinity) {
-      // Calculate threshold correctly for negative scores
-      // For negative scores, divide to make threshold MORE negative (worse)
-      // For positive scores, multiply to make threshold less positive (worse)
-      const threshold = bestValue >= 0 
-        ? bestValue * inertiaThreshold  // Positive: 100 * 0.85 = 85 (accept >= 85)
-        : bestValue / inertiaThreshold; // Negative: -100 / 0.85 = -117.65 (accept >= -117.65)
-      
-      console.log(`  Current dir score: ${currentValue.toFixed(2)}, Best score: ${bestValue.toFixed(2)}, Threshold: ${threshold.toFixed(2)}`);
-      
-      // Check if current direction is a valid move and its value is close to the best
-      if (currentValue >= threshold) {
-        console.log(`  ✓ Inertia override: Sticking with ${currentDirection} (score ${currentValue.toFixed(2)}) over ${bestMove} (score ${bestValue.toFixed(2)})`);
-        bestMove = currentDirection;
-      } else {
-        console.log(`  ✗ Changing direction from ${currentDirection} to ${bestMove} (score difference too large)`);
-      }
-    } else {
-      console.log(`  ✗ Current direction ${currentDirection} not valid or best value is -Infinity`);
-    }
-    // ----------------------
-
-    const elapsedTime = Date.now() - startTime;
-    console.log(`Final decision: ${bestMove}, evaluated ${this.nodesEvaluated} nodes in ${elapsedTime}ms\n`);
-
-    return bestMove;
+    return { bestMove, moveValues };
   }
 
-  // Find best direction using Minimax algorithm
+
+
+  // Find best direction using Predictive Lookahead algorithm
   findBestDirection(
     start: Position,
     currentDirection: Direction,
@@ -519,9 +903,20 @@ class PacmanBrain {
     isFrightened: boolean,
     recentPositions: Position[]
   ): { direction: Direction | null; debugInfo: PacmanBrain.AIDebugInfo } {
+    this.log('INFO', 'Starting decision process', {
+      currentPosition: start,
+      currentDirection,
+      isFrightened,
+      ghostPositions: ghosts.map((g, i) => `Ghost${i}: (${g.position.x},${g.position.y}) dir=${g.direction} dist=${this.heuristic(start, g.position)}`).join(' | ')
+    });
+
+    // Log decision context
+    this.logDecisionContext(start, ghosts, dots, powerPellets, isFrightened);
+
     // Create initial game state
     const initialState: GameState = {
       pacmanPos: { ...start },
+      previousPacmanPos: { ...start },  // Initially same as current position
       ghosts: ghosts.map(g => ({
         position: { ...g.position },
         direction: g.direction,
@@ -532,94 +927,103 @@ class PacmanBrain {
       positionHistory: recentPositions.map(p => ({ ...p }))
     };
 
-    // Use Minimax to find the best move, passing currentDirection for inertia
-    const bestMove = this.findBestMoveWithMinimax(initialState, currentDirection);
+    // Use predictive lookahead to find the best move, passing currentDirection for inertia
+    const { bestMove, moveValues } = this.findBestMoveWithLookahead(initialState, currentDirection);
 
-    // Create debug info for visualization
-    const possibleMoves: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+    // --- OPTIMIZED DEBUGGING LOGIC (no redundant calculations!) ---
     const directionDebugInfo: PacmanBrain.DirectionDebugInfo[] = [];
+    const initialFoodCount = initialState.dots.length + initialState.powerPellets.length;
 
-    // Set weights for debug display
-    const weights: CostWeights = isFrightened
-      ? {
-          dotValue: 3,
-          powerPelletValue: 2,
-          ghostDanger: 0,
-          ghostTarget: 8,
-          explorationBonus: 1
-        }
-      : {
-          dotValue: 5,
-          powerPelletValue: 8,
-          ghostDanger: 15,
-          ghostTarget: 0,
-          explorationBonus: 1
-        };
+    for (const move of (['UP', 'DOWN', 'LEFT', 'RIGHT'] as Direction[])) {
+      const moveState = this.cloneGameState(initialState);
+      const isWalkable = this.simulatePacmanMove(moveState, move);
 
-    // Evaluate each possible move for debug display
-    for (const move of possibleMoves) {
-      const nextPacmanPos = this.getPositionFromMove(start, move);
-
-      // Skip if it's a wall
-      if (!this.isWalkable(nextPacmanPos)) {
+      if (!isWalkable) {
+        // Still add info for walls for visualization purposes
         directionDebugInfo.push({
           direction: move,
-          cost: Infinity,
           isWalkable: false,
+          finalScore: -Infinity,
           breakdown: {
-            baseCost: 0,
-            dotAttraction: 0,
-            pelletAttraction: 0,
-            ghostInfluence: 0,
-            visitPenalty: 0
+            ghostDanger: 0,
+            chokePointDanger: 0,
+            positionalAdvantage: 0,
+            frightenedGhostBonus: 0,
+            powerPelletUrgency: 0,
+            progressScore: 0,
+            distanceToFood: 0
           }
         });
         continue;
       }
 
-      // Create a state for this move and evaluate it with minimax
-      const moveState = this.cloneGameState(initialState);
-      let cost = Infinity;
-      
-      if (this.simulatePacmanMove(moveState, move)) {
-        const stateScore = this.minimax(moveState, this.searchDepth - 1, -Infinity, Infinity, false, initialState.dots.length);
-        cost = stateScore === -Infinity ? Infinity : -stateScore;
-      }
+      // Use the pre-calculated score from lookahead (no redundant calculation!)
+      const finalScore = moveValues.get(move) ?? -Infinity;
 
-      const posKey = `${nextPacmanPos.x},${nextPacmanPos.y}`;
-      const wasVisited = recentPositions.some(p => `${p.x},${p.y}` === posKey);
+      // Calculate the immediate heuristic values for the breakdown (cheap operation)
+      const breakdown = {
+        ghostDanger: this.calculateGhostDanger(moveState.pacmanPos, moveState.ghosts),
+        chokePointDanger: this.calculateChokePointDanger(moveState.pacmanPos, moveState.ghosts),
+        positionalAdvantage: this.calculatePositionalAdvantage(moveState.pacmanPos, moveState.ghosts),
+        frightenedGhostBonus: this.calculateFrightenedGhostBonus(moveState.pacmanPos, moveState.ghosts),
+        powerPelletUrgency: this.calculatePowerPelletUrgency(moveState.pacmanPos, moveState.ghosts, moveState.powerPellets),
+        progressScore: this.calculateProgressScore(moveState.dots, moveState.powerPellets, initialFoodCount),
+        distanceToFood: this.calculateDistanceToFoodScore(moveState.pacmanPos, moveState.dots, moveState.powerPellets)
+      };
 
-      directionDebugInfo.push({
-        direction: move,
-        cost,
-        isWalkable: true,
-        breakdown: {
-          baseCost: cost < Infinity ? Math.abs(cost) : 0,
-          dotAttraction: 0,
-          pelletAttraction: 0,
-          ghostInfluence: 0,
-          visitPenalty: wasVisited ? 10 : 0
-        }
-      });
+      directionDebugInfo.push({ direction: move, isWalkable: true, finalScore, breakdown });
     }
 
     const debugInfo: PacmanBrain.AIDebugInfo = {
       position: start,
       directions: directionDebugInfo,
       chosenDirection: bestMove,
-      weights,
+      weights: this.weights,
       isFrightened
     };
+
+    // Log final decision with reasoning
+    let reasoning = '';
+    if (bestMove === null) {
+      reasoning = 'No valid moves available';
+    } else if (bestMove === currentDirection) {
+      reasoning = 'Maintained current direction due to stability or it being optimal';
+    } else {
+      reasoning = `Changed direction from ${currentDirection} to ${bestMove} due to better evaluation`;
+    }
+
+    // Log predicted ghost positions after chosen move (CRITICAL for debugging)
+    if (bestMove !== null) {
+      const nextPacmanPos = this.getPositionFromMove(start, bestMove);
+      const predictions = ghosts.map((g, i) => {
+        const predictedPos = this.predictGhostNextMove(g, nextPacmanPos);
+        // Check for both same-tile collision AND position swap collision
+        const sameTile = predictedPos.x === nextPacmanPos.x && predictedPos.y === nextPacmanPos.y;
+        const swap = g.position.x === nextPacmanPos.x && g.position.y === nextPacmanPos.y &&
+                     predictedPos.x === start.x && predictedPos.y === start.y;
+        const willCollide = sameTile || swap;
+        const collisionFlag = willCollide ? (swap ? '⚠️SWAP!' : '⚠️COLLISION!') : 'safe';
+        return `Ghost${i}: (${g.position.x},${g.position.y})→(${predictedPos.x},${predictedPos.y}) ${collisionFlag}`;
+      }).join(' | ');
+
+      this.log('INFO', 'Ghost predictions after move', {
+        move: `${bestMove}: (${start.x},${start.y})→(${nextPacmanPos.x},${nextPacmanPos.y})`,
+        predictions
+      });
+    }
+
+    // Use pre-calculated move values for logging (no redundant calculation!)
+    this.logDecisionResult(bestMove, moveValues, reasoning);
 
     return { direction: bestMove, debugInfo };
   }
 
   // Configure search depth (how many moves ahead to look)
-  // Higher depth = smarter but slower
-  // Recommended: 2-4 for real-time gameplay
+  // Higher depth = smarter, can see distant pellets, but slower computation
+  // Default: 12 (excellent long-range planning)
+  // Range: 1-20 (higher values allow seeing pellets across the entire maze)
   setSearchDepth(depth: number): void {
-    this.searchDepth = 100; // Clamp between 1-6
-    console.log(`Minimax search depth set to: ${this.searchDepth}`);
+    this.searchDepth = Math.max(1, Math.min(depth, 20)); // Clamp between 1-20
   }
 
   getSearchDepth(): number {
@@ -628,6 +1032,15 @@ class PacmanBrain {
 
   getNodesEvaluated(): number {
     return this.nodesEvaluated;
+  }
+
+  setLogLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
+    this.logLevel = level;
+    this.log('INFO', `Log level changed to ${level}`);
+  }
+
+  getLogLevel(): string {
+    return this.logLevel;
   }
 }
 

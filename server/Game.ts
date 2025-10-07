@@ -1,9 +1,7 @@
 import CONSTANTS = require('../shared/constants');
-import { MAZE_LAYOUT, STARTING_POSITIONS, Position } from '../shared/maze';
+import { MAZE_LAYOUT, STARTING_POSITIONS, TELEPORT_POINTS, Position } from '../shared/maze';
 import PacmanAI = require('./PacmanAI');
 import { Server } from 'socket.io';
-
-const MOVE_COOLDOWN_TICKS = CONSTANTS.MOVE_COOLDOWN_TICKS;
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 type GhostType = 'blinky' | 'pinky' | 'inky' | 'clyde';
@@ -26,6 +24,7 @@ class Game {
   private players: Map<string, Player>;
   isStarted: boolean;
   private gameLoop: NodeJS.Timeout | null;
+  private logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
   // Game state
   private mode: GameMode;
@@ -40,6 +39,7 @@ class Game {
   private pacmanDirection: Direction;
   private pacmanEmote: string;
   private emoteTimer: NodeJS.Timeout | null;
+  private previousPacmanPosition: Position;
 
   // Personality tracking
   private lastDotsEaten: number;
@@ -51,16 +51,17 @@ class Game {
   private frightenedTimer: NodeJS.Timeout | null;
   private respawnTimers: Map<string, NodeJS.Timeout>;
 
-  // Movement timing (ticks since last move)
-  private pacmanMoveCooldown: number;
-  private ghostMoveCooldowns: Map<string, number>;
+  // Collision tracking
+  private previousPlayerPositions: Map<string, Position>;
 
-  constructor(roomCode: string, io: Server) {
+
+  constructor(roomCode: string, io: Server, logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO') {
     this.roomCode = roomCode;
     this.io = io;
     this.players = new Map();
     this.isStarted = false;
     this.gameLoop = null;
+    this.logLevel = logLevel;
 
     // Game state
     this.mode = CONSTANTS.MODES.CHASE as GameMode;
@@ -70,8 +71,9 @@ class Game {
     this.powerPellets = this.initializePowerPellets();
 
     // Pacman AI
-    this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
+    this.pacman = new PacmanAI(STARTING_POSITIONS.pacman, logLevel);
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
+    this.previousPacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.pacmanDirection = 'RIGHT';
     this.pacmanEmote = '';
     this.emoteTimer = null;
@@ -86,9 +88,22 @@ class Game {
     this.frightenedTimer = null;
     this.respawnTimers = new Map();
 
-    // Movement timing (ticks since last move)
-    this.pacmanMoveCooldown = 0;
-    this.ghostMoveCooldowns = new Map();
+    // Collision tracking
+    this.previousPlayerPositions = new Map();
+  }
+
+  // Logging methods
+  private log(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', message: string, data?: any): void {
+    const levels = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+    if (levels[level] >= levels[this.logLevel]) {
+      const timestamp = new Date().toISOString();
+      const logMessage = `[${timestamp}] [${level}] [Game:${this.roomCode}] ${message}`;
+      if (data) {
+        console.log(logMessage, data);
+      } else {
+        console.log(logMessage);
+      }
+    }
   }
 
   private initializeDots(): Position[] {
@@ -130,10 +145,13 @@ class Game {
       state: 'active',
       respawnTime: null
     });
+    // Initialize previous position
+    this.previousPlayerPositions.set(socketId, { ...position });
   }
 
   removePlayer(socketId: string): void {
     this.players.delete(socketId);
+    this.previousPlayerPositions.delete(socketId);
   }
 
   getPlayerCount(): number {
@@ -160,16 +178,30 @@ class Game {
   start(): void {
     this.isStarted = true;
     this.gameLoop = setInterval(() => this.update(), CONSTANTS.TICK_RATE);
+    this.log('INFO', 'Game started', {
+      playerCount: this.players.size,
+      players: Array.from(this.players.values()).map(p => ({
+        username: p.username,
+        ghostType: p.ghostType
+      }))
+    });
   }
 
   stop(): void {
     if (this.gameLoop) {
       clearInterval(this.gameLoop);
       this.gameLoop = null;
+      this.log('INFO', 'Game stopped');
     }
   }
 
   private update(): void {
+    // Store previous positions BEFORE movement
+    this.previousPacmanPosition = { ...this.pacmanPosition };
+    for (const player of this.players.values()) {
+      this.previousPlayerPositions.set(player.socketId, { ...player.position });
+    }
+
     // Check collisions before movement (in case they're already on same tile)
     this.checkCollisions();
 
@@ -183,7 +215,7 @@ class Game {
       }
     }
 
-    // Check collisions after movement
+    // Check collisions after movement (including position swaps)
     this.checkCollisions();
 
     // Check win/lose conditions
@@ -197,13 +229,15 @@ class Game {
   }
 
   private movePacman(): void {
-    // Check cooldown (move every 2 ticks = 100ms)
-    if (this.pacmanMoveCooldown > 0) {
-      this.pacmanMoveCooldown--;
-      return;
-    }
+    this.log('DEBUG', 'Moving Pacman', {
+      currentPosition: this.pacmanPosition,
+      currentDirection: this.pacmanDirection,
+      mode: this.mode,
+      dotsRemaining: this.dots.length,
+      powerPelletsRemaining: this.powerPellets.length
+    });
 
-    // Update Pacman AI decision only when we're actually going to move
+    // Update Pacman AI decision
     const ghosts = Array.from(this.players.values())
       .filter(p => p.state === 'active' || p.state === 'frightened')
       .map(p => ({
@@ -212,13 +246,29 @@ class Game {
         isFrightened: p.state === 'frightened'
       }));
 
+    this.log('DEBUG', 'Ghosts for AI decision', {
+      ghostCount: ghosts.length,
+      ghosts: ghosts.map(g => ({
+        position: g.position,
+        direction: g.direction,
+        isFrightened: g.isFrightened
+      }))
+    });
+
     const isFrightened = this.mode === CONSTANTS.MODES.FRIGHTENED;
+    const previousDirection = this.pacmanDirection;
     this.pacmanDirection = this.pacman.update(
       this.dots,
       this.powerPellets,
       ghosts,
       isFrightened
     );
+
+    this.log('INFO', 'Pacman direction updated', {
+      previousDirection,
+      newDirection: this.pacmanDirection,
+      directionChanged: previousDirection !== this.pacmanDirection
+    });
 
     const dir = CONSTANTS.DIRECTIONS[this.pacmanDirection];
     if (!dir) return;
@@ -231,31 +281,25 @@ class Game {
     if (this.isWalkable(targetX, targetY)) {
       this.pacmanPosition.x = targetX;
       this.pacmanPosition.y = targetY;
-      this.pacman.setPosition(targetX, targetY);
 
-      // Reset cooldown
-      this.pacmanMoveCooldown = MOVE_COOLDOWN_TICKS;
+      // Check for teleportation
+      const teleportExit = this.checkTeleport(this.pacmanPosition);
+      if (teleportExit) {
+        this.pacmanPosition.x = teleportExit.x;
+        this.pacmanPosition.y = teleportExit.y;
+      }
+
+      this.pacman.setPosition(this.pacmanPosition.x, this.pacmanPosition.y);
 
       // Check dot collision
-      this.checkDotCollision(targetX, targetY);
+      this.checkDotCollision(this.pacmanPosition.x, this.pacmanPosition.y);
 
       // Check power pellet collision
-      this.checkPowerPelletCollision(targetX, targetY);
+      this.checkPowerPelletCollision(this.pacmanPosition.x, this.pacmanPosition.y);
     }
   }
 
   private moveGhost(player: Player): void {
-    // Check cooldown
-    if (!this.ghostMoveCooldowns.has(player.socketId)) {
-      this.ghostMoveCooldowns.set(player.socketId, 0);
-    }
-
-    const cooldown = this.ghostMoveCooldowns.get(player.socketId)!;
-    if (cooldown > 0) {
-      this.ghostMoveCooldowns.set(player.socketId, cooldown - 1);
-      return;
-    }
-
     const dir = CONSTANTS.DIRECTIONS[player.direction];
     if (!dir) return;
 
@@ -268,8 +312,12 @@ class Game {
       player.position.x = targetX;
       player.position.y = targetY;
 
-      // Reset cooldown
-      this.ghostMoveCooldowns.set(player.socketId, MOVE_COOLDOWN_TICKS);
+      // Check for teleportation
+      const teleportExit = this.checkTeleport(player.position);
+      if (teleportExit) {
+        player.position.x = teleportExit.x;
+        player.position.y = teleportExit.y;
+      }
     }
   }
 
@@ -284,11 +332,26 @@ class Game {
     return cell !== 0;
   }
 
+  // Check if a position is a teleport entry point and return the exit position
+  private checkTeleport(pos: Position): Position | null {
+    for (const teleport of TELEPORT_POINTS) {
+      if (pos.x === teleport.entry.x && pos.y === teleport.entry.y) {
+        return teleport.exit;
+      }
+    }
+    return null;
+  }
+
   private checkDotCollision(x: number, y: number): void {
     const dotIndex = this.dots.findIndex(dot => dot.x === x && dot.y === y);
     if (dotIndex !== -1) {
       this.dots.splice(dotIndex, 1);
       this.score += CONSTANTS.DOT_VALUE;
+      this.log('DEBUG', 'Dot collected', {
+        position: { x, y },
+        score: this.score,
+        dotsRemaining: this.dots.length
+      });
     }
   }
 
@@ -297,12 +360,21 @@ class Game {
     if (pelletIndex !== -1) {
       this.powerPellets.splice(pelletIndex, 1);
       this.score += CONSTANTS.POWER_PELLET_VALUE;
+      this.log('INFO', 'Power pellet collected!', {
+        position: { x, y },
+        score: this.score,
+        powerPelletsRemaining: this.powerPellets.length
+      });
       this.activateFrightenedMode();
     }
   }
 
   private activateFrightenedMode(): void {
     this.mode = CONSTANTS.MODES.FRIGHTENED as GameMode;
+    this.log('INFO', 'Frightened mode activated!', {
+      duration: CONSTANTS.FRIGHTENED_DURATION,
+      affectedPlayers: this.players.size
+    });
 
     // Pacman just ate power pellet - power up!
     const powerUpEmotes = ['😈', '💪', '🔥', '😤', '🎯'];
@@ -312,6 +384,7 @@ class Game {
     for (const player of this.players.values()) {
       if (player.state === 'active') {
         player.state = 'frightened';
+        this.log('DEBUG', `Player ${player.username} (${player.ghostType}) is now frightened`);
       }
     }
 
@@ -335,9 +408,38 @@ class Game {
     for (const player of this.players.values()) {
       if (player.state !== 'active' && player.state !== 'frightened') continue;
 
-      // Only check collision if on the exact same tile
+      let collisionDetected = false;
+
+      // Check 1: Are they on the exact same tile now?
       if (player.position.x === this.pacmanPosition.x &&
           player.position.y === this.pacmanPosition.y) {
+        collisionDetected = true;
+      }
+
+      // Check 2: Did they swap positions (pass through each other)?
+      const playerPrevPos = this.previousPlayerPositions.get(player.socketId);
+      if (playerPrevPos) {
+        // Ghost moved FROM where Pac-Man is now, TO where Pac-Man was
+        const swapped =
+          playerPrevPos.x === this.pacmanPosition.x &&
+          playerPrevPos.y === this.pacmanPosition.y &&
+          player.position.x === this.previousPacmanPosition.x &&
+          player.position.y === this.previousPacmanPosition.y;
+
+        if (swapped) {
+          collisionDetected = true;
+        }
+      }
+
+      if (collisionDetected) {
+        this.log('INFO', 'Collision detected!', {
+          player: player.username,
+          ghostType: player.ghostType,
+          pacmanPosition: this.pacmanPosition,
+          ghostPosition: player.position,
+          mode: this.mode
+        });
+
         if (this.mode === CONSTANTS.MODES.FRIGHTENED) {
           this.respawnGhost(player);
         } else {
@@ -549,6 +651,11 @@ class Game {
 
   private checkGameOver(): void {
     if (this.captureCount >= CONSTANTS.CAPTURES_TO_WIN) {
+      this.log('INFO', 'Game Over - Ghosts Win!', {
+        captureCount: this.captureCount,
+        requiredCaptures: CONSTANTS.CAPTURES_TO_WIN,
+        finalScore: this.score
+      });
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
       this.stop();
       this.io.to(this.roomCode).emit('gameOver', {
@@ -556,6 +663,10 @@ class Game {
         score: this.score
       });
     } else if (this.dots.length === 0) {
+      this.log('INFO', 'Game Over - Pacman Wins!', {
+        dotsRemaining: this.dots.length,
+        finalScore: this.score
+      });
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
       this.stop();
       this.io.to(this.roomCode).emit('gameOver', {
@@ -598,6 +709,16 @@ class Game {
 
   private broadcastState(): void {
     this.io.to(this.roomCode).emit('gameState', this.getState());
+  }
+
+  setLogLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
+    this.logLevel = level;
+    this.pacman.setLogLevel(level);
+    this.log('INFO', `Log level changed to ${level}`);
+  }
+
+  getLogLevel(): string {
+    return this.logLevel;
   }
 }
 

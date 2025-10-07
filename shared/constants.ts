@@ -24,7 +24,6 @@ interface GameConstants {
   TILE_SIZE: number;
   GRID_WIDTH: number;
   GRID_HEIGHT: number;
-  MOVE_COOLDOWN_TICKS: number;
 
   // Game modes
   MODES: Modes;
@@ -35,13 +34,7 @@ interface GameConstants {
   // Timing (in milliseconds)
   FRIGHTENED_DURATION: number;
   RESPAWN_DELAY: number;
-  TICK_RATE: number;
-
-  // Speeds (tiles per second)
-  GHOST_SPEED: number;
-  PACMAN_SPEED: number;
-  FRIGHTENED_GHOST_SPEED: number;
-  FRIGHTENED_PACMAN_SPEED: number;
+  TICK_RATE: number; // Game logic update rate (lower = slower movement)
 
   // Scoring
   GHOST_CAPTURE_BASE_SCORE: number;
@@ -61,7 +54,6 @@ const GAME_CONSTANTS: GameConstants = {
   TILE_SIZE: 20,
   GRID_WIDTH: 28,
   GRID_HEIGHT: 35,
-  MOVE_COOLDOWN_TICKS: 2,
 
   // Game modes
   MODES: {
@@ -81,13 +73,7 @@ const GAME_CONSTANTS: GameConstants = {
   // Timing (in milliseconds)
   FRIGHTENED_DURATION: 10000,
   RESPAWN_DELAY: 5000,
-  TICK_RATE: 50, // 20 ticks per second
-
-  // Speeds (tiles per second)
-  GHOST_SPEED: 4,
-  PACMAN_SPEED: 4,
-  FRIGHTENED_GHOST_SPEED: 2,
-  FRIGHTENED_PACMAN_SPEED: 5,
+  TICK_RATE: 150, // ~6.7 ticks per second (one move every 150ms)
 
   // Scoring
   GHOST_CAPTURE_BASE_SCORE: 200,

@@ -48,6 +48,24 @@ interface StartingPositions {
   ghostHouse: Position;
 }
 
+// Teleport tunnel definition
+export interface TeleportPoint {
+  entry: Position;
+  exit: Position;
+}
+
+// Teleport tunnels on the left and right sides of the maze (row 17)
+export const TELEPORT_POINTS: TeleportPoint[] = [
+  {
+    entry: { x: 0, y: 14 },   // Left side entrance
+    exit: { x: 27, y: 14 }     // Right side exit
+  },
+  {
+    entry: { x: 27, y: 14 },   // Right side entrance
+    exit: { x: 0, y: 14 }      // Left side exit
+  }
+];
+
 // Starting positions (at tile centers, same as dots/pellets)
 export const STARTING_POSITIONS: StartingPositions = {
   pacman: { x: 14, y: 23 },
