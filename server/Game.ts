@@ -183,6 +183,8 @@ class Game {
 
   start(): void {
     this.isStarted = true;
+    // Send full state when game starts to ensure all clients are synchronized
+    this.io.to(this.roomCode).emit('gameState', this.getState());
     this.gameLoop = setInterval(() => this.update(), CONSTANTS.TICK_RATE);
   }
 

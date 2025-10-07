@@ -47,7 +47,8 @@ class GameScene extends Phaser.Scene {
     this.socket = data.socket;
     this.roomCode = data.roomCode;
     this.myGhostType = data.myGhostType;
-    this.mySocketId = this.socket.id;
+    // Socket ID is available after connection
+    this.mySocketId = this.socket.id || null;
   }
 
   preload() {
@@ -80,6 +81,12 @@ class GameScene extends Phaser.Scene {
       right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
     };
 
+    // Store full game state
+    this.gameState = null;
+
+    // Request initial game state now that scene is ready
+    this.socket.emit('requestGameState', { roomCode: this.roomCode });
+
     // Handle input with client-side prediction
     this.input.keyboard.on('keydown', (event) => {
       let direction = null;
@@ -111,18 +118,19 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // Store full game state
-    this.gameState = null;
-
     // Listen for full game state (initial load)
     this.socket.on('gameState', (state) => {
+      console.log('[DEBUG] Received full gameState:', state);
       this.gameState = state;
       this.updateGameState(state);
     });
 
     // Listen for delta updates (optimized)
     this.socket.on('gameUpdate', (delta) => {
-      if (!this.gameState) return;
+      if (!this.gameState) {
+        console.log('[DEBUG] Received delta but no gameState yet');
+        return;
+      }
 
       // Merge delta into full state
       if (delta.score !== undefined) this.gameState.score = delta.score;

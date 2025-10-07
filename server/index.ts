@@ -86,8 +86,12 @@ io.on('connection', (socket) => {
     const game = gameManager.getGame(roomCode);
     if (game) {
       if (game.canStart()) {
-        game.start();
+        // Emit gameStarted first so clients can prepare
         io.to(roomCode).emit('gameStarted');
+        // Small delay to allow clients to initialize Phaser
+        setTimeout(() => {
+          game.start();
+        }, 100);
       }
     }
   });
