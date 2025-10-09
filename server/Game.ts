@@ -2,6 +2,8 @@ import CONSTANTS = require('../shared/constants');
 import { MAZE_LAYOUT, STARTING_POSITIONS, TELEPORT_POINTS, Position } from '../shared/maze';
 import PacmanAI = require('./PacmanAI');
 import AggressiveAI = require('./AggressiveAI');
+import { TabularHybridCoordinator } from './rl/TabularHybridCoordinator';
+import { GameState } from './rl/types';
 import { Server } from 'socket.io';
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
@@ -36,6 +38,9 @@ class Game {
   // Pacman AI
   private pacman: PacmanAI;
   private aggressiveAI: AggressiveAI;
+  private trainedAI: TabularHybridCoordinator | null;
+  private useTrainedAI: boolean;
+  private stepCount: number;
   private pacmanPosition: Position;
   private pacmanDirection: Direction;
   private pacmanEmote: string;
@@ -84,11 +89,17 @@ class Game {
     // Pacman AI
     this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
     this.aggressiveAI = new AggressiveAI();
+    this.trainedAI = null;
+    this.useTrainedAI = false;
+    this.stepCount = 0;
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.previousPacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.pacmanDirection = 'RIGHT';
     this.pacmanEmote = '';
     this.emoteTimer = null;
+
+    // Load trained AI model
+    this.loadTrainedAI();
 
     // Personality tracking
     this.lastDotsEaten = 0;
@@ -143,6 +154,19 @@ class Game {
       }
     }
     return pellets;
+  }
+
+  private async loadTrainedAI(): Promise<void> {
+    try {
+      const modelPath = './models/adversarial_tabular/pacman';
+      this.trainedAI = new TabularHybridCoordinator();
+      await this.trainedAI.load(modelPath);
+      this.useTrainedAI = true;
+      console.log('✅ Loaded trained Pacman AI successfully!');
+    } catch (error) {
+      console.warn('⚠️ Could not load trained AI, using default AI:', error);
+      this.useTrainedAI = false;
+    }
   }
 
   addPlayer(socketId: string, username: string, ghostType: GhostType): void {
@@ -248,26 +272,46 @@ class Game {
     const isFrightened = this.mode === CONSTANTS.MODES.FRIGHTENED;
     const previousDirection = this.pacmanDirection;
 
-    // AI SWITCHING LOGIC: Use aggressive AI when in frightened mode
-    // BUT switch back to defensive AI if less than 1 second remains
-    const timeRemainingMs = this.getFrightenedTimeRemaining();
-    const useAggressiveAI = isFrightened && timeRemainingMs > 1000;
+    // Use trained AI if available, otherwise fallback to original AI
+    if (this.useTrainedAI && this.trainedAI) {
+      // Create GameState for the trained AI
+      const gameState: GameState = {
+        position: this.pacmanPosition,
+        direction: this.pacmanDirection,
+        dots: this.dots,
+        powerPellets: this.powerPellets,
+        ghosts: ghosts,
+        isFrightened: isFrightened,
+        score: this.score,
+        tickCount: this.stepCount
+      };
 
-    if (useAggressiveAI) {
-      // AGGRO MODE: Hunt ghosts relentlessly
-      this.pacmanDirection = this.aggressiveAI.getHuntingDirection(
-        this.pacmanPosition,
-        this.pacmanDirection,
-        ghosts
-      );
+      // Use trained AI to select action
+      this.pacmanDirection = this.trainedAI.selectAction(gameState, this.stepCount);
+      this.stepCount++;
     } else {
-      // DEFENSIVE MODE: Normal survival AI
-      this.pacmanDirection = this.pacman.update(
-        this.dots,
-        this.powerPellets,
-        ghosts,
-        isFrightened
-      );
+      // FALLBACK: Original AI SWITCHING LOGIC
+      // Use aggressive AI when in frightened mode
+      // BUT switch back to defensive AI if less than 1 second remains
+      const timeRemainingMs = this.getFrightenedTimeRemaining();
+      const useAggressiveAI = isFrightened && timeRemainingMs > 1000;
+
+      if (useAggressiveAI) {
+        // AGGRO MODE: Hunt ghosts relentlessly
+        this.pacmanDirection = this.aggressiveAI.getHuntingDirection(
+          this.pacmanPosition,
+          this.pacmanDirection,
+          ghosts
+        );
+      } else {
+        // DEFENSIVE MODE: Normal survival AI
+        this.pacmanDirection = this.pacman.update(
+          this.dots,
+          this.powerPellets,
+          ghosts,
+          isFrightened
+        );
+      }
     }
 
 

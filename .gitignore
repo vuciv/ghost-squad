@@ -1,5 +1,19 @@
 node_modules/
+dist/
 .DS_Store
 *.log
-.env
-dist/
+
+# Documentation and markdown files
+*.md
+
+# Training outputs and recordings
+recordings/
+recordings_*/
+visualizations/
+
+# Training episode recordings (can be very large)
+*.json
+!models/**/*.json
+
+# Model checkpoints (allow models to be committed)
+# models/ folder is now tracked so trained models can be deployed

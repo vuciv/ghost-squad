@@ -7,9 +7,16 @@
     "build": "rm -rf dist && tsc && cp -r client dist/client && cp -r shared dist/shared",
     "start": "npm run build && node dist/server/index.js",
     "dev": "ts-node server/index.ts",
-    "server": "npm run dev"
+    "server": "npm run dev",
+    "train": "ts-node server/rl/train-tabular.ts",
+    "train:continue": "ts-node server/rl/continue-tabular.ts",
+    "train:adversarial": "ts-node server/rl/train-adversarial.ts",
+    "train:pacman-counter": "ts-node server/rl/train-pacman-vs-smart-ghosts.ts",
+    "dashboard": "open visualizations/training_dashboard.html",
+    "replay": "open visualizations/replay_viewer.html"
   },
   "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
     "express": "^4.18.2",
     "socket.io": "^4.6.1",
     "typescript": "^5.9.3"
