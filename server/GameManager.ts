@@ -41,6 +41,16 @@ class GameManager {
     return roomCode;
   }
 
+  createRoomWithCode(roomCode: string): Game {
+    const game = new Game(roomCode, this.io);
+    this.games.set(roomCode, game);
+    return game;
+  }
+
+  deleteGame(roomCode: string): void {
+    this.games.delete(roomCode);
+  }
+
   joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType): { success: boolean; error?: string } {
     const game = this.games.get(roomCode);
 

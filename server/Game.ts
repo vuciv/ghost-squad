@@ -19,6 +19,7 @@ interface Player {
   direction: Direction;
   state: PlayerState;
   respawnTime: number | null;
+  ready: boolean;
 }
 
 class Game {
@@ -57,6 +58,9 @@ class Game {
   private frightenedTimer: NodeJS.Timeout | null;
   private frightenedStartTime: number | null;
   private respawnTimers: Map<string, NodeJS.Timeout>;
+  private gameTimer: NodeJS.Timeout | null;
+  private gameStartTime: number | null;
+  private readonly GAME_TIME_LIMIT = 180000; // 3 minutes in milliseconds
 
   // Collision tracking
   private previousPlayerPositions: Map<string, Position>;
@@ -111,6 +115,8 @@ class Game {
     this.frightenedTimer = null;
     this.frightenedStartTime = null;
     this.respawnTimers = new Map();
+    this.gameTimer = null;
+    this.gameStartTime = null;
 
     // Collision tracking
     this.previousPlayerPositions = new Map();
@@ -178,7 +184,8 @@ class Game {
       position,
       direction: 'UP',
       state: 'active',
-      respawnTime: null
+      respawnTime: null,
+      ready: false
     });
     // Initialize previous position
     this.previousPlayerPositions.set(socketId, { ...position });
@@ -207,14 +214,58 @@ class Game {
   }
 
   canStart(): boolean {
-    return this.players.size > 0 && !this.isStarted;
+    if (this.players.size === 0 || this.isStarted) return false;
+
+    // Check if all players are ready
+    for (const player of this.players.values()) {
+      if (!player.ready) return false;
+    }
+    return true;
+  }
+
+  togglePlayerReady(socketId: string): boolean {
+    const player = this.players.get(socketId);
+    if (!player) return false;
+
+    player.ready = !player.ready;
+    return player.ready;
+  }
+
+  areAllPlayersReady(): boolean {
+    if (this.players.size === 0) return false;
+    for (const player of this.players.values()) {
+      if (!player.ready) return false;
+    }
+    return true;
   }
 
   start(): void {
     this.isStarted = true;
+    this.gameStartTime = Date.now();
+
+    // Set game timer for 3 minutes
+    this.gameTimer = setTimeout(() => {
+      this.timeUp();
+    }, this.GAME_TIME_LIMIT);
+
     // Send full state when game starts to ensure all clients are synchronized
     this.io.to(this.roomCode).emit('gameState', this.getState());
     this.gameLoop = setInterval(() => this.update(), CONSTANTS.TICK_RATE);
+
+    // Send timer updates every second
+    this.startTimerBroadcast();
+  }
+
+  private startTimerBroadcast(): void {
+    const timerInterval = setInterval(() => {
+      if (!this.isStarted || this.mode === CONSTANTS.MODES.GAME_OVER) {
+        clearInterval(timerInterval);
+        return;
+      }
+      this.io.to(this.roomCode).emit('timerUpdate', {
+        timeRemaining: this.getTimeRemaining()
+      });
+    }, 1000); // Update every second
   }
 
   stop(): void {
@@ -222,6 +273,27 @@ class Game {
       clearInterval(this.gameLoop);
       this.gameLoop = null;
     }
+    if (this.gameTimer) {
+      clearTimeout(this.gameTimer);
+      this.gameTimer = null;
+    }
+  }
+
+  private timeUp(): void {
+    // Time's up - Pacman wins because ghosts didn't catch them 3 times
+    this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
+    this.stop();
+    this.io.to(this.roomCode).emit('gameOver', {
+      winner: 'pacman',
+      reason: 'timeout',
+      score: this.score
+    });
+  }
+
+  getTimeRemaining(): number {
+    if (!this.gameStartTime) return this.GAME_TIME_LIMIT;
+    const elapsed = Date.now() - this.gameStartTime;
+    return Math.max(0, this.GAME_TIME_LIMIT - elapsed);
   }
 
   private update(): void {
@@ -740,6 +812,7 @@ class Game {
       mode: this.mode,
       score: this.score,
       captureCount: this.captureCount,
+      timeRemaining: this.getTimeRemaining(),
       dots: this.dots,
       powerPellets: this.powerPellets,
       pacman: {
@@ -754,7 +827,8 @@ class Game {
         ghostType: p.ghostType,
         position: p.position,
         direction: p.direction,
-        state: p.state
+        state: p.state,
+        ready: p.ready
       }))
     };
   }

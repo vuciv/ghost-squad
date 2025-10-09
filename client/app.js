@@ -4,20 +4,23 @@ let game;
 let currentRoomCode = null;
 let selectedGhost = null;
 let currentGameState = null;
+let gameStarting = false;
 
 // UI Elements
 const mainMenu = document.getElementById('main-menu');
 const lobbyScreen = document.getElementById('lobby-screen');
-const hudElement = document.getElementById('hud');
+const timerDisplay = document.getElementById('timer-display');
 const gameOverScreen = document.getElementById('game-over-screen');
 
 const createRoomBtn = document.getElementById('create-room-btn');
 const joinRoomBtn = document.getElementById('join-room-btn');
 const roomCodeInput = document.getElementById('room-code-input');
-const startGameBtn = document.getElementById('start-game-btn');
+const readyBtn = document.getElementById('ready-btn');
+const retryBtn = document.getElementById('retry-btn');
 const backToMenuBtn = document.getElementById('back-to-menu-btn');
 const roomCodeDisplay = document.getElementById('room-code-display');
 const playersList = document.getElementById('players-list');
+const readyStatus = document.getElementById('ready-status');
 
 // Initialize Socket.IO connection
 function initSocket() {
@@ -40,11 +43,38 @@ function initSocket() {
   });
 
   socket.on('gameStarted', () => {
+    gameStarting = false;
     startGame();
   });
 
   socket.on('playerLeft', (data) => {
     // Player left
+  });
+
+  socket.on('gameRestarted', () => {
+    // Hide game over screen and restart game immediately
+    gameStarting = false;
+    document.getElementById('game-over-screen').classList.remove('active');
+    timerDisplay.classList.remove('hidden');
+    document.getElementById('lives-display').classList.remove('hidden');
+
+    // If game exists, restart the scene instead of destroying
+    if (game && game.scene.scenes.length > 0) {
+      const scene = game.scene.scenes[0];
+      scene.scene.restart({
+        socket,
+        roomCode: currentRoomCode,
+        myGhostType: selectedGhost
+      });
+    } else {
+      // Fallback: create new game if it doesn't exist
+      game = new Phaser.Game(window.gameConfig);
+      game.scene.start('GameScene', {
+        socket,
+        roomCode: currentRoomCode,
+        myGhostType: selectedGhost
+      });
+    }
   });
 }
 
@@ -66,8 +96,6 @@ createRoomBtn.addEventListener('click', () => {
       }, (joinResponse) => {
         if (joinResponse.success) {
           selectedGhost = firstGhost;
-          // Enable start button for room creator
-          startGameBtn.disabled = false;
           // Mark ghost as selected
           document.querySelector(`.ghost-btn[data-ghost="${firstGhost}"]`)?.classList.add('selected');
         }
@@ -124,7 +152,6 @@ document.querySelectorAll('.ghost-btn').forEach(btn => {
           b.classList.remove('selected');
         });
         btn.classList.add('selected');
-        startGameBtn.disabled = false;
       } else {
         alert(response.error);
       }
@@ -132,14 +159,36 @@ document.querySelectorAll('.ghost-btn').forEach(btn => {
   });
 });
 
-startGameBtn.addEventListener('click', () => {
-  if (selectedGhost) {
-    socket.emit('startGame', { roomCode: currentRoomCode });
-  }
+readyBtn.addEventListener('click', () => {
+  socket.emit('toggleReady', { roomCode: currentRoomCode });
+});
+
+retryBtn.addEventListener('click', () => {
+  socket.emit('restartGame', { roomCode: currentRoomCode });
 });
 
 backToMenuBtn.addEventListener('click', () => {
-  location.reload();
+  // Hide game over screen
+  gameOverScreen.classList.remove('active');
+
+  // Show main menu
+  mainMenu.classList.add('active');
+
+  // Hide timer and lives
+  timerDisplay.classList.add('hidden');
+  document.getElementById('lives-display').classList.add('hidden');
+
+  // Destroy the game
+  if (game) {
+    game.destroy(true);
+    game = null;
+  }
+
+  // Reset state
+  currentRoomCode = null;
+  selectedGhost = null;
+  currentGameState = null;
+  gameStarting = false;
 });
 
 // Click-to-copy room code
@@ -174,7 +223,8 @@ function showLobby(roomCode) {
 
 function startGame() {
   lobbyScreen.classList.remove('active');
-  hudElement.classList.remove('hidden');
+  timerDisplay.classList.remove('hidden');
+  document.getElementById('lives-display').classList.remove('hidden');
 
   // Initialize Phaser game
   if (!game) {
@@ -306,6 +356,28 @@ function updateLobbyPlayers(state) {
     playerCountDisplay.textContent = `${count}/4 Player${count !== 1 ? 's' : ''}`;
   }
 
+  // Update ready button state
+  const myPlayer = state.players.find(p => p.socketId === socket.id);
+  if (myPlayer) {
+    readyBtn.textContent = myPlayer.ready ? '✓ Ready' : 'Ready Up';
+    readyBtn.classList.toggle('ready', myPlayer.ready);
+  }
+
+  // Check if all players are ready
+  const allReady = state.players.length > 0 && state.players.every(p => p.ready);
+
+  // Update ready status message
+  const readyCount = state.players.filter(p => p.ready).length;
+  readyStatus.textContent = allReady
+    ? '✓ All players ready! Starting game...'
+    : `${readyCount}/${state.players.length} players ready`;
+
+  // Auto-start game when all players are ready
+  if (allReady && !gameStarting && lobbyScreen.classList.contains('active')) {
+    gameStarting = true;
+    socket.emit('startGame', { roomCode: currentRoomCode });
+  }
+
   // Update players list
   playersList.innerHTML = '<h4 style="margin-bottom: 10px;">Players in Lobby:</h4>';
   if (state.players.length === 0) {
@@ -320,7 +392,8 @@ function updateLobbyPlayers(state) {
       };
       const playerDiv = document.createElement('div');
       playerDiv.className = 'player-item';
-      playerDiv.innerHTML = `<span style="color: ${colors[player.ghostType]}">👻</span> ${player.username} - ${player.ghostType}`;
+      const readyIcon = player.ready ? '✓ ' : '';
+      playerDiv.innerHTML = `<span style="color: ${colors[player.ghostType]}">👻</span> ${readyIcon}${player.username} - ${player.ghostType}`;
       playersList.appendChild(playerDiv);
     });
   }

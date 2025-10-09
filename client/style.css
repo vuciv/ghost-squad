@@ -353,44 +353,54 @@ body {
   border-radius: 3px;
 }
 
-#hud {
+/* Centered Timer Display */
+.timer-display {
   position: absolute;
   top: 20px;
-  left: 20px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 3px solid #00f;
-  border-radius: 5px;
-  padding: 15px;
-  font-size: 12px;
-}
-
-.hud-item {
-  margin: 8px 0;
-}
-
-.hud-label {
-  color: #0ff;
-  margin-right: 10px;
-}
-
-.mode-indicator {
-  margin-top: 15px;
-  padding: 10px;
-  border-radius: 5px;
-  text-align: center;
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.mode-indicator.frightened {
-  background: #00f;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 72px;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
   color: #fff;
-  animation: blink 0.5s infinite;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.8),
+    0 0 20px rgba(255, 255, 255, 0.5),
+    4px 4px 0px rgba(0, 0, 0, 0.8);
+  z-index: 100;
+  letter-spacing: 8px;
+  pointer-events: none;
+  animation: pulse 2s ease-in-out infinite;
 }
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0.5; }
+.timer-display.warning {
+  color: #ff0000;
+  animation: warningPulse 0.5s ease-in-out infinite;
+  text-shadow:
+    0 0 10px rgba(255, 0, 0, 0.8),
+    0 0 20px rgba(255, 0, 0, 0.5),
+    4px 4px 0px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.02);
+    opacity: 0.95;
+  }
+}
+
+@keyframes warningPulse {
+  0%, 100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.05);
+    opacity: 0.8;
+  }
 }
 
 #game-container {
@@ -466,5 +476,44 @@ body {
 
 .support-btn.youtube:hover {
   background: rgba(60, 0, 0, 0.9);
+}
+
+/* Ready button styling */
+#ready-btn.ready {
+  background: #0a0;
+  border-color: #0f0;
+}
+
+#ready-btn.ready:hover {
+  background: #080;
+}
+
+.ready-status {
+  font-size: 11px;
+  color: #ffff00;
+  margin: 15px 0;
+  padding: 10px;
+  background: rgba(255, 255, 0, 0.1);
+  border-radius: 5px;
+}
+
+/* Lives display - bottom left of maze */
+#game-container {
+  position: relative;
+}
+
+.lives-display {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.lives-display canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 

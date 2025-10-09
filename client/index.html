@@ -73,25 +73,12 @@
       </div>
 
       <div id="players-list" class="players-list"></div>
-      <button id="start-game-btn" class="btn btn-primary" disabled>Start Game</button>
+      <button id="ready-btn" class="btn btn-secondary">Ready Up</button>
+      <p id="ready-status" class="ready-status">Waiting for all players to ready up...</p>
     </div>
 
-    <!-- HUD (shown during game) -->
-    <div id="hud" class="hidden">
-      <div class="hud-item">
-        <span class="hud-label">Score:</span>
-        <span id="score-display">0</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Captures:</span>
-        <span id="captures-display">0 / 3</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Dots:</span>
-        <span id="dots-display">0</span>
-      </div>
-      <div id="mode-indicator" class="mode-indicator"></div>
-    </div>
+    <!-- Timer Display (centered top) -->
+    <div id="timer-display" class="timer-display hidden">3:00</div>
 
     <!-- Game Over Screen -->
     <div id="game-over-screen" class="menu-screen">
@@ -101,7 +88,8 @@
         <span class="hud-label">Final Score:</span>
         <span id="final-score">0</span>
       </div>
-      <button id="back-to-menu-btn" class="btn btn-primary">Back to Menu</button>
+      <button id="retry-btn" class="btn btn-primary">Play Again</button>
+      <button id="back-to-menu-btn" class="btn btn-secondary">Back to Menu</button>
     </div>
     <!-- Support Links -->
     <div id="support-links" class="support-links" aria-label="Support and Subscribe">
@@ -114,7 +102,9 @@
     </div>
   </div>
 
-  <div id="game-container"></div>
+  <div id="game-container">
+    <div id="lives-display" class="lives-display hidden"></div>
+  </div>
 
   <script src="/shared/constants.js?v=6"></script>
   <script src="/shared/maze.js?v=6"></script>

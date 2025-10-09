@@ -96,6 +96,41 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('toggleReady', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (game) {
+      game.togglePlayerReady(socket.id);
+      // Send updated game state to all players
+      io.to(roomCode).emit('gameState', game.getState());
+    }
+  });
+
+  socket.on('restartGame', ({ roomCode }) => {
+    const game = gameManager.getGame(roomCode);
+    if (game) {
+      // Create a new game with the same players
+      const oldPlayers = Array.from(game.getState().players);
+
+      // Delete old game
+      gameManager.deleteGame(roomCode);
+
+      // Create new game with same room code
+      const newGame = gameManager.createRoomWithCode(roomCode);
+
+      // Re-add all players (keep them ready)
+      oldPlayers.forEach(player => {
+        newGame.addPlayer(player.socketId, player.username, player.ghostType);
+        newGame.togglePlayerReady(player.socketId); // Set them as ready
+      });
+
+      // Immediately start the new game
+      io.to(roomCode).emit('gameRestarted');
+      setTimeout(() => {
+        newGame.start();
+      }, 100);
+    }
+  });
+
   socket.on('disconnect', () => {
     gameManager.handleDisconnect(socket.id);
   });

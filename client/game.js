@@ -49,20 +49,35 @@ class GameScene extends Phaser.Scene {
     this.myGhostType = data.myGhostType;
     // Socket ID is available after connection
     this.mySocketId = this.socket.id || null;
+
+    // Clear entities on restart
+    this.entities.clear();
+    this.pacmanSprite = null;
+    this.pacmanEmoteText = null;
+    this.gameState = null;
   }
 
   preload() {
-    // Load the raw sprite sheet image. We'll parse frames manually to allow
-    // horizontal margins without affecting the vertical cuts.
-    this.load.image('spritesheet', 'assets/spritesheet.png');
+    // Only load if not already loaded
+    if (!this.textures.exists('spritesheet')) {
+      // Load the raw sprite sheet image. We'll parse frames manually to allow
+      // horizontal margins without affecting the vertical cuts.
+      this.load.image('spritesheet', 'assets/spritesheet.png');
 
-    // Set up error handling for missing sprites (fallback to colored circles)
-    this.load.on('loaderror', (file) => {
-      // Failed to load sprite
-    });
+      // Set up error handling for missing sprites (fallback to colored circles)
+      this.load.on('loaderror', (file) => {
+        // Failed to load sprite
+      });
+    }
   }
 
   create() {
+    // Remove old socket listeners to prevent duplicates
+    this.socket.off('gameState');
+    this.socket.off('gameUpdate');
+    this.socket.off('gameOver');
+    this.socket.off('timerUpdate');
+
     // Create maze
     this.createMaze();
 
@@ -123,6 +138,11 @@ class GameScene extends Phaser.Scene {
       console.log('[DEBUG] Received full gameState:', state);
       this.gameState = state;
       this.updateGameState(state);
+
+      // Set initial timer from game state
+      if (state.timeRemaining !== undefined) {
+        this.updateTimer(state.timeRemaining);
+      }
     });
 
     // Listen for delta updates (optimized)
@@ -164,9 +184,36 @@ class GameScene extends Phaser.Scene {
     this.socket.on('gameOver', (data) => {
       this.handleGameOver(data);
     });
+
+    // Listen for timer updates
+    this.socket.on('timerUpdate', (data) => {
+      this.updateTimer(data.timeRemaining);
+    });
+  }
+
+  updateTimer(timeRemaining) {
+    const seconds = Math.ceil(timeRemaining / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    const timerDisplay = document.getElementById('timer-display');
+    if (timerDisplay) {
+      timerDisplay.textContent = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+
+      // Add warning class when under 30 seconds
+      if (seconds <= 30) {
+        timerDisplay.classList.add('warning');
+      } else {
+        timerDisplay.classList.remove('warning');
+      }
+    }
   }
 
   buildSpriteSheetTexture() {
+    // Skip if sprites texture already exists from previous run
+    if (this.textures.exists('sprites')) {
+      return;
+    }
+
     const sourceTexture = this.textures.get('spritesheet');
     if (!sourceTexture) {
       return;
@@ -182,11 +229,6 @@ class GameScene extends Phaser.Scene {
     };
 
     const sourceImage = sourceTexture.getSourceImage();
-
-    // Recreate the working texture so we can control frame cuts precisely
-    if (this.textures.exists('sprites')) {
-      this.textures.remove('sprites');
-    }
 
     const canvasTexture = this.textures.createCanvas('sprites', sourceImage.width, sourceImage.height);
     canvasTexture.context.drawImage(sourceImage, 0, 0);
@@ -313,6 +355,11 @@ class GameScene extends Phaser.Scene {
 
   createAnimations() {
     if (!this.textures.exists('sprites')) {
+      return;
+    }
+
+    // Check if animations already exist to avoid duplicates
+    if (this.anims.exists('pacman_right')) {
       return;
     }
 
@@ -501,18 +548,47 @@ class GameScene extends Phaser.Scene {
   }
 
   updateHUD(state) {
-    document.getElementById('score-display').textContent = state.score;
-    document.getElementById('captures-display').textContent =
-      `${state.captureCount} / ${GAME_CONSTANTS.CAPTURES_TO_WIN}`;
-    document.getElementById('dots-display').textContent = state.dots.length;
+    // Timer is updated separately via timerUpdate socket event, not here
+    // No other HUD needed - just update lives display
+    this.updateLivesDisplay(state.captureCount);
+  }
 
-    const modeIndicator = document.getElementById('mode-indicator');
-    if (state.mode === GAME_CONSTANTS.MODES.FRIGHTENED) {
-      modeIndicator.textContent = 'POWER MODE!';
-      modeIndicator.className = 'mode-indicator frightened';
-    } else {
-      modeIndicator.textContent = '';
-      modeIndicator.className = 'mode-indicator';
+  updateLivesDisplay(captureCount) {
+    const livesRemaining = GAME_CONSTANTS.CAPTURES_TO_WIN - captureCount;
+    const livesDisplay = document.getElementById('lives-display');
+
+    if (!livesDisplay) return;
+
+    // Clear previous lives
+    livesDisplay.innerHTML = '';
+
+    // Get the spritesheet image
+    const spritesheet = this.textures.exists('sprites') ?
+      this.textures.get('sprites').getSourceImage() : null;
+
+    if (!spritesheet) return;
+
+    // Draw Pacman icons for each life
+    for (let i = 0; i < livesRemaining; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Pacman right sprite (frame 28)
+      const frameNum = 28;
+      const frameWidth = 16;
+      const frameHeight = 16;
+      const marginX = 8;
+      const cols = Math.floor((spritesheet.width - marginX * 2) / frameWidth);
+      const col = frameNum % cols;
+      const row = Math.floor(frameNum / cols);
+      const srcX = marginX + col * frameWidth;
+      const srcY = row * frameHeight;
+
+      ctx.drawImage(spritesheet, srcX, srcY, frameWidth, frameHeight, 0, 0, 32, 32);
+      livesDisplay.appendChild(canvas);
     }
   }
 
@@ -702,14 +778,21 @@ class GameScene extends Phaser.Scene {
   }
 
   handleGameOver(data) {
-    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('timer-display').classList.add('hidden');
+    document.getElementById('lives-display').classList.add('hidden');
     document.getElementById('game-over-screen').classList.add('active');
     document.getElementById('game-over-title').textContent =
       data.winner === 'ghosts' ? '🏆 GHOSTS WIN!' : '👾 PACMAN WINS!';
-    document.getElementById('game-over-message').textContent =
-      data.winner === 'ghosts' ?
-      'You caught Pacman 3 times!' :
-      'Pacman ate all the dots!';
+
+    let message = '';
+    if (data.winner === 'ghosts') {
+      message = 'You caught Pacman 3 times!';
+    } else if (data.reason === 'timeout') {
+      message = 'Time ran out! Ghosts failed to catch Pacman!';
+    } else {
+      message = 'Pacman ate all the dots!';
+    }
+    document.getElementById('game-over-message').textContent = message;
     document.getElementById('final-score').textContent = data.score;
   }
 
