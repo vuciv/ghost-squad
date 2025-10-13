@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cinematic A* — Three.js</title>
+  <style>
+    :root{
+      --bg0: #0b0f17;
+      --bg1: #0f1221;
+      --accent: #62ffe2;
+      --accent2: #6aa6ff;
+      --hot: #ff9b6a;
+      --grid: #1c2235;
+      --text: #e7ecff;
+    }
+    html, body { height: 100%; margin: 0; background: radial-gradient(100% 100% at 50% 0%, var(--bg1) 0%, var(--bg0) 60%); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial; color: var(--text); }
+    #app { position: fixed; inset: 0; }
+
+    /* Overlay UI */
+    .overlay { position: fixed; inset: 0; pointer-events: none; display: grid; grid-template-rows: auto 1fr auto; }
+    .topbar { display:flex; align-items:center; gap:.75rem; padding: 14px 18px; background: linear-gradient(180deg, rgba(10,14,22,.7), rgba(10,14,22,0)); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .badge { border: 1px solid #2a3350; padding: 6px 10px; border-radius: 999px; font-size: 12px; letter-spacing:.14em; text-transform: uppercase; opacity:.85 }
+    .title { font-weight: 700; font-size: clamp(18px, 1.4vw, 24px); letter-spacing:.02em; opacity:.92 }
+    .controls { position: fixed; right: 16px; bottom: 16px; pointer-events: auto; }
+    .panel { background: rgba(16,20,33,.72); border: 1px solid #26304f; padding: 12px 14px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: 320px; }
+    .panel h3 { margin: 0 0 6px; font-size: 13px; letter-spacing:.12em; text-transform: uppercase; opacity:.8 }
+    .panel .keys { display:grid; grid-template-columns: auto 1fr; gap: 6px 10px; font-size: 13px; opacity:.92 }
+    kbd { pointer-events:none; padding: 3px 8px; border-radius: 8px; border: 1px solid #2d3757; background: #161b2b; box-shadow: inset 0 -2px 0 rgba(255,255,255,.04); font-weight:600; font-size: 12px; }
+
+    /* Cinematic letterbox (toggleable) */
+    .bars { position: fixed; left:0; right:0; height: 9vh; background: linear-gradient(180deg, #000, rgba(0,0,0,.65)); mix-blend-mode: normal; pointer-events:none; opacity:.85; transition: transform .6s cubic-bezier(.22,.61,.36,1); }
+    .bars.top { top:0; transform: translateY(-120%); }
+    .bars.bottom { bottom:0; transform: translateY(120%); }
+    .bars.active { transform: translateY(0); }
+
+    /* Vignette & film grain */
+    .vignette { position: fixed; inset:0; pointer-events:none; background: radial-gradient(75% 70% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,.45) 100%); mix-blend-mode: multiply; }
+    .grain { position: fixed; inset:-200%; pointer-events:none; background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity=".08"/></svg>'); animation: grain 6s steps(6) infinite; opacity:.45; }
+    @keyframes grain { 0%{ transform:translate(0,0) } 10%{ transform:translate(-5%, -10%) } 20%{ transform:translate(-15%, 5%) } 30%{ transform:translate(7%, -25%) } 40%{ transform:translate(-5%, 25%) } 50%{ transform:translate(-15%, 10%) } 60%{ transform:translate(15%, 0) } 70%{ transform:translate(0,15%) } 80%{ transform:translate(3%,35%) } 90%{ transform:translate(-10%,10%) } 100%{ transform:translate(0,0) } }
+
+    a.link { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="overlay">
+    <div class="topbar">
+      <span class="badge">A*</span>
+      <div class="title">Cinematic Pathfinding — Interactive Three.js Visual</div>
+    </div>
+    <div class="vignette"></div>
+    <div class="grain"></div>
+  </div>
+  <div class="bars top" id="barTop"></div>
+  <div class="bars bottom" id="barBottom"></div>
+
+  <div class="controls">
+    <div class="panel">
+      <h3>Controls</h3>
+      <div class="keys">
+        <kbd>Space</kbd><span>Play / Pause sequence</span>
+        <kbd>R</kbd><span>Regenerate maze & rerun</span>
+        <kbd>S</kbd><span>Step search (single frame)</span>
+        <kbd>O</kbd><span>Toggle obstacles</span>
+        <kbd>V</kbd><span>Toggle cinematic bars</span>
+        <kbd>P</kbd><span>Toggle post-processing</span>
+        <kbd>1–4</kbd><span>Jump to scene beats</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js & Postprocessing (module build) -->
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { EffectComposer } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/OutputPass.js';
+
+    // ====== PARAMETERS ======
+    const GRID_SIZE = 26;     // cells per side
+    const CELL_SIZE = 1.0;    // world units
+    const OBSTACLE_DENSITY = 0.18; // 0..1
+    const ANIM_SPEED = 1.0;   // global time scale
+
+    // ====== SCENE ======
+    const app = document.getElementById('app');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    app.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0b0f17, 0.06);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 200);
+    camera.position.set(16, 18, 18);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(GRID_SIZE * 0.5, 0, GRID_SIZE * 0.5);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0x6688ff, 0x101214, 0.9);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 2.0);
+    dir.position.set(10, 16, 6);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(1024,1024);
+    scene.add(dir);
+
+    // Floor plane
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(GRID_SIZE*CELL_SIZE+8, GRID_SIZE*CELL_SIZE+8),
+      new THREE.MeshPhysicalMaterial({ color: 0x0f1424, roughness: .9, metalness: 0, clearcoat: .2 })
+    );
+    floor.rotation.x = -Math.PI/2;
+    floor.position.set(GRID_SIZE*CELL_SIZE/2, -0.501, GRID_SIZE*CELL_SIZE/2);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Subtle grid lines
+    const gridHelper = new THREE.GridHelper(GRID_SIZE*CELL_SIZE, GRID_SIZE, 0x1f2a45, 0x1a2237);
+    gridHelper.position.set(GRID_SIZE*CELL_SIZE/2, -0.499, GRID_SIZE*CELL_SIZE/2);
+    scene.add(gridHelper);
+
+    // Post-processing
+    let composer, bloomPass, outputPass; let usePP = true;
+    function initPost() {
+      composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.8, 0.8, 0.85);
+      outputPass = new OutputPass();
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+      composer.addPass(outputPass);
+    }
+    initPost();
+
+    // ====== GRID / GEOMETRY ======
+    const origin = new THREE.Vector3(0, 0, 0);
+    const cellsParent = new THREE.Group();
+    scene.add(cellsParent);
+
+    const cellGeo = new THREE.BoxGeometry(CELL_SIZE*0.96, 0.6, CELL_SIZE*0.96);
+    const baseMat = new THREE.MeshPhysicalMaterial({ color: 0x151c2d, roughness: .75, metalness: .05, transmission: 0, clearcoat: .4 });
+    const obstacleMat = new THREE.MeshPhysicalMaterial({ color: 0x10182c, roughness: .55, metalness: .2 });
+
+    // Heat material for visited cells
+    const heatMat = new THREE.MeshBasicMaterial({ color: 0x6aa6ff });
+
+    // Path material (glow color boosted by bloom)
+    const pathMat = new THREE.MeshBasicMaterial({ color: 0x62ffe2 });
+
+    // Start/End markers
+    const markerGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.04, 32);
+    const startMat = new THREE.MeshBasicMaterial({ color: 0xff9b6a });
+    const endMat = new THREE.MeshBasicMaterial({ color: 0xbaffc6 });
+    const startMarker = new THREE.Mesh(markerGeo, startMat);
+    const endMarker = new THREE.Mesh(markerGeo, endMat);
+    startMarker.rotation.x = endMarker.rotation.x = -Math.PI/2;
+    startMarker.position.y = endMarker.position.y = -0.18;
+    scene.add(startMarker, endMarker);
+
+    // Instanced meshes for performance
+    const baseCount = GRID_SIZE * GRID_SIZE;
+    const baseInst = new THREE.InstancedMesh(cellGeo, baseMat, baseCount);
+    const heatInst = new THREE.InstancedMesh(cellGeo, heatMat, baseCount);
+    const blockInst = new THREE.InstancedMesh(cellGeo, obstacleMat, baseCount);
+    const pathInst = new THREE.InstancedMesh(cellGeo, pathMat, baseCount);
+    baseInst.receiveShadow = true; baseInst.castShadow = true;
+    blockInst.receiveShadow = true; blockInst.castShadow = true;
+
+    cellsParent.add(baseInst, heatInst, blockInst, pathInst);
+
+    // Utility to position instances
+    function cellMatrix(ix, iz, y=0){
+      const m = new THREE.Matrix4();
+      const x = ix*CELL_SIZE + CELL_SIZE/2;
+      const z = iz*CELL_SIZE + CELL_SIZE/2;
+      m.setPosition(x, y, z);
+      return m;
+    }
+
+    // ====== A* IMPLEMENTATION ======
+    const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+    function heuristic(a,b){ return Math.abs(a.x-b.x) + Math.abs(a.z-b.z); }
+
+    function makeGrid(size, density){
+      const grid = new Array(size).fill(0).map(()=>new Array(size).fill(0));
+      for (let z=0; z<size; z++){
+        for (let x=0; x<size; x++){
+          const edge = (x===0 || z===0 || x===size-1 || z===size-1);
+          grid[z][x] = edge ? 1 : (Math.random() < density ? 1 : 0);
+        }
+      }
+      return grid;
+    }
+
+    function vec(x,z){ return { x, z }; }
+    function key(v){ return v.x+","+v.z; }
+
+    function aStar(grid, start, goal){
+      const size = grid.length;
+      const open = new Map(); // key -> node
+      const pq = [];          // simple array as priority queue
+      const g = new Map();
+      const f = new Map();
+      const came = new Map();
+
+      function push(node, score){
+        pq.push([score,node]);
+        pq.sort((a,b)=>a[0]-b[0]);
+      }
+
+      const skey = key(start), gkey = key(goal);
+      g.set(skey, 0);
+      f.set(skey, heuristic(start, goal));
+      open.set(skey, start);
+      push(start, f.get(skey));
+
+      const visitedOrder = [];
+
+      while(pq.length){
+        const current = pq.shift()[1];
+        const ckey = key(current);
+        visitedOrder.push(current);
+        if (ckey === gkey){
+          // Reconstruct path
+          const path = [current];
+          let curKey = ckey;
+          while(came.has(curKey)){
+            const prev = came.get(curKey);
+            path.push(prev);
+            curKey = key(prev);
+          }
+          path.reverse();
+          return { path, visitedOrder };
+        }
+
+        for (const [dx,dz] of DIRS){
+          const nx = current.x + dx;
+          const nz = current.z + dz;
+          if (nx<0||nz<0||nx>=size||nz>=size) continue;
+          if (grid[nz][nx]===1) continue; // wall
+          const neighbor = vec(nx,nz);
+          const nkey = key(neighbor);
+          const tentative = (g.get(ckey) ?? Infinity) + 1;
+          if (tentative < (g.get(nkey) ?? Infinity)){
+            came.set(nkey, current);
+            g.set(nkey, tentative);
+            const score = tentative + heuristic(neighbor, goal);
+            f.set(nkey, score);
+            push(neighbor, score);
+            open.set(nkey, neighbor);
+          }
+        }
+      }
+      return { path: [], visitedOrder };
+    }
+
+    // ====== STATE ======
+    let grid = makeGrid(GRID_SIZE, OBSTACLE_DENSITY);
+    let start = vec(1, 1);
+    let goal = vec(GRID_SIZE-2, GRID_SIZE-2);
+    let results = aStar(grid, start, goal);
+    // ensure solvable by regenerating if needed
+    function regenerateEnsured(){
+      let attempts=0; const max=200;
+      do { grid = makeGrid(GRID_SIZE, OBSTACLE_DENSITY); attempts++; results = aStar(grid, start, goal); } while(results.path.length===0 && attempts<max);
+    }
+    regenerateEnsured();
+
+    // ====== DRAW GRID ======
+    function redraw(){
+      const tmp = new THREE.Object3D();
+      let i=0;
+      for (let z=0; z<GRID_SIZE; z++){
+        for (let x=0; x<GRID_SIZE; x++){
+          tmp.position.set(x*CELL_SIZE + CELL_SIZE/2, 0, z*CELL_SIZE + CELL_SIZE/2);
+          tmp.rotation.set(0,0,0);
+          tmp.scale.set(1,1,1);
+          tmp.updateMatrix();
+          baseInst.setMatrixAt(i, tmp.matrix);
+
+          // obstacles sit slightly taller
+          if (grid[z][x]===1){
+            tmp.position.y = 0.32;
+            tmp.updateMatrix();
+            blockInst.setMatrixAt(i, tmp.matrix);
+          } else {
+            // move out of view if not used
+            tmp.position.set(-999,-999,-999);
+            tmp.updateMatrix();
+            blockInst.setMatrixAt(i, tmp.matrix);
+          }
+
+          // clear heat & path
+          tmp.position.set(-999,-999,-999);
+          tmp.updateMatrix();
+          heatInst.setMatrixAt(i, tmp.matrix);
+          pathInst.setMatrixAt(i, tmp.matrix);
+
+          i++;
+        }
+      }
+      baseInst.instanceMatrix.needsUpdate = true;
+      blockInst.instanceMatrix.needsUpdate = true;
+      heatInst.instanceMatrix.needsUpdate = true;
+      pathInst.instanceMatrix.needsUpdate = true;
+
+      startMarker.position.set(start.x*CELL_SIZE + CELL_SIZE/2, startMarker.position.y, start.z*CELL_SIZE + CELL_SIZE/2);
+      endMarker.position.set(goal.x*CELL_SIZE + CELL_SIZE/2, endMarker.position.y, goal.z*CELL_SIZE + CELL_SIZE/2);
+    }
+    redraw();
+
+    // ====== ANIMATION SEQUENCER ======
+    let time = 0, playing = true;
+    const beats = { // timeline beats in seconds
+      establish: 0,
+      overview: 4.0,
+      search: 7.2,
+      reveal: 12.0,
+      linger: 16.5,
+      loop: 22.0
+    };
+
+    function easeOutExpo(x){ return x===1?1:1 - Math.pow(2, -10*x); }
+    function lerp(a,b,t){ return a+(b-a)*t; }
+
+    function setBars(on){
+      document.getElementById('barTop').classList.toggle('active', on);
+      document.getElementById('barBottom').classList.toggle('active', on);
+    }
+    setBars(true);
+
+    // Search animation state
+    let visitedIdx = 0, pathIdx = 0;
+    let visitedMatrices = [], pathMatrices = [];
+    function prepareAnimation(){
+      visitedIdx = 0; pathIdx = 0;
+      visitedMatrices = results.visitedOrder.map(v => cellMatrix(v.x, v.z, 0.08));
+      pathMatrices = results.path.map(v => cellMatrix(v.x, v.z, 0.12));
+
+      // clear instances
+      const mOff = new THREE.Matrix4().setPosition(-999,-999,-999);
+      for (let i=0; i<baseCount; i++){
+        heatInst.setMatrixAt(i, mOff); pathInst.setMatrixAt(i, mOff);
+      }
+      heatInst.instanceMatrix.needsUpdate = true;
+      pathInst.instanceMatrix.needsUpdate = true;
+    }
+    prepareAnimation();
+
+    // Camera keyframes
+    function cameraPose(t){
+      // Establishing dolly-in
+      if (t < beats.overview){
+        const p = easeOutExpo(Math.min(1, (t-beats.establish)/ (beats.overview-beats.establish)));
+        camera.position.set( lerp(-4, 16, p), lerp(26, 18, p), lerp(30, 18, p) );
+        controls.target.lerp(new THREE.Vector3(GRID_SIZE*0.5, 0, GRID_SIZE*0.5), 0.08);
+      }
+      // Overview orbit
+      else if (t < beats.search){
+        const k = (t-beats.overview) * 0.35;
+        const radius = 22;
+        camera.position.set(
+          GRID_SIZE*0.5 + Math.cos(k)*radius,
+          lerp(18, 16, Math.min(1,(t-beats.overview)/2)),
+          GRID_SIZE*0.5 + Math.sin(k)*radius,
+        );
+        controls.target.set(GRID_SIZE*0.5, 0, GRID_SIZE*0.5);
+      }
+      // Move toward start
+      else if (t < beats.reveal){
+        const p = Math.min(1, (t-beats.search)/(beats.reveal-beats.search));
+        const look = new THREE.Vector3(start.x+2, 0, start.z+2);
+        controls.target.lerp(look, 0.08);
+        camera.position.lerp(new THREE.Vector3(start.x+6, 8, start.z+6), 0.04);
+      }
+      // Path reveal crane
+      else {
+        const p = Math.min(1, (t-beats.reveal)/(beats.linger-beats.reveal));
+        const look = new THREE.Vector3(goal.x, 0, goal.z);
+        controls.target.lerp(look, 0.05);
+        camera.position.lerp(new THREE.Vector3(goal.x+5, 10, goal.z+5), 0.03);
+      }
+      controls.update();
+    }
+
+    // Search drawing per frame
+    function drawSearch(dt){
+      const speed = 60 * ANIM_SPEED;
+      let updated=false;
+      for (let s=0; s<Math.ceil(dt*speed); s++){
+        if (visitedIdx < visitedMatrices.length){
+          heatInst.setMatrixAt(visitedIdx, visitedMatrices[visitedIdx]);
+          visitedIdx++; updated=true;
+        } else if (pathIdx < pathMatrices.length){
+          // place from the end for a trailing reveal
+          const i = baseCount - 1 - pathIdx;
+          pathInst.setMatrixAt(i, pathMatrices[pathIdx]);
+          pathIdx++; updated=true;
+        }
+      }
+      if (updated){
+        heatInst.instanceMatrix.needsUpdate = true;
+        pathInst.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    // Beat labels (helpful for editing cuts)
+    const beatMarkers = [];
+    function addBeatMarker(label, color=0xffffff){
+      const geo = new THREE.SphereGeometry(0.15, 16, 16);
+      const mat = new THREE.MeshBasicMaterial({ color });
+      const s = new THREE.Mesh(geo, mat);
+      s.position.set(-3 + beatMarkers.length*0.5, 0.2, -3);
+      s.userData.label = label;
+      scene.add(s); beatMarkers.push(s);
+    }
+    ['establish','overview','search','reveal','linger'].forEach((b,i)=>addBeatMarker(b, new THREE.Color().setHSL(i/6, .6, .6)));
+
+    // ====== RENDER LOOP ======
+    let last = performance.now();
+    function render(){
+      const now = performance.now();
+      const dt = (now-last)/1000; last = now;
+      if (playing) time += dt;
+
+      if (time > beats.loop){ // loop timeline gently
+        time = beats.overview + (time - beats.loop);
+        prepareAnimation();
+      }
+
+      cameraPose(time);
+      drawSearch(dt);
+
+      // Animate subtle pulse on path color
+      const hue = (Math.sin(now*0.0015)*0.08)+0.45; // 0..1
+      pathMat.color.setHSL(hue, 0.9, 0.7);
+
+      if (usePP) composer.render(); else renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+    render();
+
+    // ====== INTERACTION ======
+    function reboot({regen=false}={}){
+      if (regen){ regenerateEnsured(); }
+      results = aStar(grid, start, goal);
+      if (results.path.length===0){ regenerateEnsured(); }
+      redraw();
+      prepareAnimation();
+      time = 0; playing = true;
+    }
+
+    window.addEventListener('resize', ()=>{
+      renderer.setSize(innerWidth, innerHeight);
+      camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+      initPost();
+    });
+
+    window.addEventListener('keydown', (e)=>{
+      const k = e.key.toLowerCase();
+      if (k === ' ') { playing = !playing; }
+      else if (k === 'r') reboot({regen:true});
+      else if (k === 's') { time += 1/60; drawSearch(1/60); }
+      else if (k === 'o') { // toggle obstacles -> rebuild
+        for (let z=0; z<GRID_SIZE; z++) for (let x=0; x<GRID_SIZE; x++) if (grid[z][x]===1 && Math.random()<0.6) grid[z][x]=0; else if (grid[z][x]===0 && Math.random()<0.05) grid[z][x]=1;
+        reboot();
+      }
+      else if (k === 'v') { const on = !document.getElementById('barTop').classList.contains('active'); setBars(on); }
+      else if (k === 'p') { usePP = !usePP; }
+      else if (k === '1') { time = beats.establish; prepareAnimation(); }
+      else if (k === '2') { time = beats.overview; }
+      else if (k === '3') { time = beats.search; prepareAnimation(); }
+      else if (k === '4') { time = beats.reveal; }
+    });
+
+    // Intro flourish
+    ;(function intro(){
+      // quick light pulse
+      let t=0; const base=hemi.intensity; function pulse(){
+        t+=0.02; hemi.intensity = base + Math.sin(t*6)*0.2; if (t<1.2) requestAnimationFrame(pulse); else hemi.intensity=base; }
+      pulse();
+    })();
+  </script>
+
+  <!-- On‑screen helper text for "video editing principles" -->
+  <script>
+    // These hints are for creators capturing B‑roll: quick toggles & beat markers
+    const tips = document.createElement('div');
+    tips.style.position='fixed'; tips.style.left='16px'; tips.style.bottom='16px'; tips.style.pointerEvents='none'; tips.style.opacity='.9';
+    tips.innerHTML = `
+      <div style="background:rgba(12,16,26,.7);border:1px solid #283250;padding:10px 12px;border-radius:14px;max-width:360px;font-size:12.5px;line-height:1.35">
+        <div style="letter-spacing:.12em;text-transform:uppercase;opacity:.85;margin-bottom:6px">Filmmaker Tips</div>
+        <ul style="margin:0;padding-left:16px">
+          <li>Press <b>1–4</b> to jump to beat‑matched camera moves for clean cuts.</li>
+          <li>Toggle <b>V</b> for letterbox bars when capturing cinematic shots.</li>
+          <li>Use <b>P</b> to compare with/without bloom (great before/after).</li>
+          <li><b>Space</b> to time reveals to your music downbeats.</li>
+        </ul>
+      </div>`;
+    document.body.appendChild(tips);
+  </script>
+</body>
+</html>

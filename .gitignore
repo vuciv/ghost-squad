@@ -9,7 +9,6 @@ dist/
 # Training outputs and recordings
 recordings/
 recordings_*/
-visualizations/
 
 # Training episode recordings (can be very large)
 *.json
