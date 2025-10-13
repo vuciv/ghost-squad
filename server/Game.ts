@@ -277,6 +277,29 @@ class Game {
       clearTimeout(this.gameTimer);
       this.gameTimer = null;
     }
+    this.cleanup();
+  }
+
+  private cleanup(): void {
+    // Clear all timers
+    if (this.frightenedTimer) {
+      clearTimeout(this.frightenedTimer);
+      this.frightenedTimer = null;
+    }
+    if (this.emoteTimer) {
+      clearTimeout(this.emoteTimer);
+      this.emoteTimer = null;
+    }
+    for (const timer of this.respawnTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.respawnTimers.clear();
+
+    // Clear large data structures
+    this.players.clear();
+    this.previousPlayerPositions.clear();
+    this.dots = [];
+    this.powerPellets = [];
   }
 
   private timeUp(): void {
