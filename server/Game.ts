@@ -163,14 +163,16 @@ class Game {
   }
 
   private async loadTrainedAI(): Promise<void> {
+    this.useTrainedAI = false;
+    return;
     try {
       const modelPath = './models/adversarial_tabular/pacman';
       this.trainedAI = new TabularHybridCoordinator();
-      await this.trainedAI.load(modelPath);
+      //await this.trainedAI.load(modelPath);
       this.useTrainedAI = true;
-      console.log('✅ Loaded trained Pacman AI successfully!');
+      //console.log('✅ Loaded trained Pacman AI successfully!');
     } catch (error) {
-      console.warn('⚠️ Could not load trained AI, using default AI:', error);
+      //console.warn('⚠️ Could not load trained AI, using default AI:', error);
       this.useTrainedAI = false;
     }
   }
