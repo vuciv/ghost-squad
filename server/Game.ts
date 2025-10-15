@@ -917,13 +917,13 @@ class Game {
     }
 
     if (this.dotsChanged) {
-      delta.d = this.dots.length;
+      delta.d = this.dots;
       this.lastBroadcastState.dotsCount = this.dots.length;
       this.dotsChanged = false;
     }
 
     if (this.pelletsChanged) {
-      delta.pp = this.powerPellets.length;
+      delta.pp = this.powerPellets;
       this.lastBroadcastState.pelletsCount = this.powerPellets.length;
       this.pelletsChanged = false;
     }

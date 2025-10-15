@@ -169,12 +169,8 @@ class GameScene extends Phaser.Scene {
       if (delta.s !== undefined) this.gameState.score = delta.s;
       if (delta.c !== undefined) this.gameState.captureCount = delta.c;
       if (delta.m !== undefined) this.gameState.mode = delta.m;
-      if (delta.d !== undefined) {
-        this.gameState.dots = this.gameState.dots.slice(0, delta.d);
-      }
-      if (delta.pp !== undefined) {
-        this.gameState.powerPellets = this.gameState.powerPellets.slice(0, delta.pp);
-      }
+      if (delta.d !== undefined) this.gameState.dots = delta.d;
+      if (delta.pp !== undefined) this.gameState.powerPellets = delta.pp;
 
       this.updateGameState(this.gameState);
     });
@@ -809,10 +805,8 @@ class GameScene extends Phaser.Scene {
 
 
   update(time, delta) {
-    // Smoother, faster interpolation
-    const lerpFactor = Math.min(0.35, delta / 30);
+    const lerpFactor = Math.min(0.45, delta / 16.67);
 
-    // Update Pacman sprite
     if (this.pacmanSprite && typeof this.pacmanSprite.targetX !== 'undefined') {
       this.pacmanSprite.x += (this.pacmanSprite.targetX - this.pacmanSprite.x) * lerpFactor;
       this.pacmanSprite.y += (this.pacmanSprite.targetY - this.pacmanSprite.y) * lerpFactor;
@@ -823,7 +817,6 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Update ghost sprites
     for (const sprite of this.entities.values()) {
       if (sprite && typeof sprite.targetX !== 'undefined') {
         sprite.x += (sprite.targetX - sprite.x) * lerpFactor;
@@ -838,7 +831,6 @@ class GameScene extends Phaser.Scene {
   }
 }
 
-// Make gameConfig globally accessible
 window.gameConfig = {
   type: Phaser.AUTO,
   width: GAME_CONSTANTS.GRID_WIDTH * GAME_CONSTANTS.TILE_SIZE,
@@ -848,8 +840,13 @@ window.gameConfig = {
   scene: GameScene,
   physics: {
     default: 'arcade',
-    arcade: {
-      debug: false
-    }
-  }
+    arcade: { debug: false }
+  },
+  render: {
+    pixelArt: true,
+    antialias: false,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    fps: { target: 60, min: 30, smoothStep: false }
+  },
+  fps: { target: 60, min: 30, smoothStep: false }
 };

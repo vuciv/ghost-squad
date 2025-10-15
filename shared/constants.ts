@@ -73,7 +73,7 @@ const GAME_CONSTANTS: GameConstants = {
   // Timing (in milliseconds)
   FRIGHTENED_DURATION: 10000,
   RESPAWN_DELAY: 5000,
-  TICK_RATE: 120, // ~8.33 ticks per second (faster, smoother gameplay)
+  TICK_RATE: 120, // 8.33 ticks per second (original speed)
 
   // Scoring
   GHOST_CAPTURE_BASE_SCORE: 200,
