@@ -32,24 +32,19 @@ class GameManager {
     return code;
   }
 
-  async createRoom(logLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO'): Promise<string> {
-    console.log('📝 createRoom called');
-    const roomCode = this.generateRoomCode();
-    console.log('🎲 Generated room code:', roomCode);
-
-    const game = new Game(roomCode, this.io);
-    console.log('🎮 Game instance created');
-
-    this.games.set(roomCode, game);
-    console.log('📍 Game stored in map, total games:', this.games.size);
-
-    // Set cleanup callback for when game ends
+  private setupGameEndCallback(game: Game): void {
     game.setOnGameEnd(async (code) => {
-      console.log('🧹 Game ended, cleaning up:', code);
       await this.cleanupGame(code);
     });
+  }
 
-    // Store room metadata in Redis so other instances can discover it (optional, non-blocking)
+  async createRoom(): Promise<string> {
+    const roomCode = this.generateRoomCode();
+    const game = new Game(roomCode, this.io, this.redisClient);
+
+    this.games.set(roomCode, game);
+    this.setupGameEndCallback(game);
+
     if (this.redisClient) {
       setImmediate(() => {
         this.redisClient?.set?.(
@@ -59,54 +54,39 @@ class GameManager {
             createdAt: Date.now(),
             playerCount: 0
           }),
-          {
-            EX: 3600 // Expire after 1 hour
-          }
-        ).catch((err: any) => console.warn('Failed to store room in Redis:', err));
+          { EX: 3600 }
+        ).catch(() => {});
       });
     }
 
-    // Fallback cleanup after 1 hour (in case game never ends or callback fails)
     setTimeout(() => {
       if (this.games.has(roomCode)) {
-        this.cleanupGame(roomCode).catch(err =>
-          console.warn('Failed to cleanup game:', err)
-        );
+        this.cleanupGame(roomCode).catch(() => {});
       }
-    }, 3600000); // Clean up after 1 hour
+    }, 3600000);
 
-    console.log('✅ createRoom complete, returning:', roomCode);
     return roomCode;
   }
 
   createRoomWithCode(roomCode: string): Game {
-    const game = new Game(roomCode, this.io);
+    const game = new Game(roomCode, this.io, this.redisClient);
     this.games.set(roomCode, game);
-
-    // Set cleanup callback for when game ends
-    game.setOnGameEnd(async (code) => {
-      await this.cleanupGame(code);
-    });
-
+    this.setupGameEndCallback(game);
     return game;
   }
 
   private async cleanupGame(roomCode: string): Promise<void> {
-    // Remove game from memory immediately
     this.games.delete(roomCode);
 
-    // Remove all players in this room from playerRooms
     for (const [socketId, code] of this.playerRooms.entries()) {
       if (code === roomCode) {
         this.playerRooms.delete(socketId);
       }
     }
 
-    // Clean up Redis room metadata (non-blocking, optional)
     if (this.redisClient) {
       setImmediate(() => {
-        this.redisClient?.del?.(`room:${roomCode}`)
-          .catch((err: any) => console.warn('Failed to delete room from Redis:', err));
+        this.redisClient?.del?.(`room:${roomCode}`).catch(() => {});
       });
     }
   }
@@ -115,14 +95,27 @@ class GameManager {
     this.games.delete(roomCode);
   }
 
-  async joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType): Promise<{ success: boolean; error?: string; requiresRedirect?: boolean }> {
-    const game = this.games.get(roomCode);
+  async joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType): Promise<{ success: boolean; error?: string }> {
+    let game = this.games.get(roomCode);
 
-    // Check if room exists locally
     if (!game) {
-      // For now, skip Redis checks on local dev - they'll fail anyway
-      // In production with proper Redis, add async room discovery here
-      return { success: false, error: 'Room not found' };
+      if (this.redisClient) {
+        try {
+          const savedState = await this.redisClient.get(`gameState:${roomCode}`);
+          if (savedState) {
+            game = new Game(roomCode, this.io, this.redisClient);
+            await game.restoreGameState(JSON.parse(savedState));
+            this.games.set(roomCode, game);
+            this.setupGameEndCallback(game);
+          }
+        } catch (err) {
+          // Redis load failed, proceed to error
+        }
+      }
+
+      if (!game) {
+        return { success: false, error: 'Room not found' };
+      }
     }
 
     if (game.isStarted) {
@@ -140,18 +133,17 @@ class GameManager {
     game.addPlayer(socketId, username, ghostType);
     this.playerRooms.set(socketId, roomCode);
 
-    // Update player count in Redis (non-blocking, optional)
     if (this.redisClient) {
       setImmediate(() => {
         this.redisClient?.get?.(`room:${roomCode}`)
           .then((roomData: any) => {
             if (roomData) {
               const room = JSON.parse(roomData);
-              room.playerCount = game.getPlayerCount();
+              room.playerCount = game!.getPlayerCount();
               return this.redisClient?.set(`room:${roomCode}`, JSON.stringify(room), { EX: 3600 });
             }
           })
-          .catch((err: any) => console.warn('Failed to update room in Redis:', err));
+          .catch(() => {});
       });
     }
 

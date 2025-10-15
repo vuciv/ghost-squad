@@ -39,13 +39,9 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e6
 });
 
-// Connect Redis clients and attach adapter
 Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
   io.adapter(createAdapter(pubClient, subClient));
-  console.log('✅ Redis adapter connected for horizontal scaling');
 }).catch(err => {
-  console.warn('⚠️ Redis connection failed, using in-memory adapter:', err.message);
-  // Set redisClient to null so GameManager skips Redis operations
   pubClient = null as any;
 });
 
@@ -59,48 +55,33 @@ app.use('/shared', express.static(path.join(__dirname, '../shared')));
 // Game manager instance with Redis client for horizontal scaling
 const gameManager = new GameManager(io, pubClient);
 
-// Pre-load AI model on server startup to avoid lag when first game starts
-(async () => {
-  try {
-    await require('./Game').preloadTrainedAI();
-  } catch (error) {
-    // AI pre-load failed, games will use fallback AI
-  }
-})();
+require('./Game').preloadTrainedAI().catch(() => {});
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
 
   socket.on('createRoom', async (callback) => {
     try {
-      console.log('📥 createRoom event received from', socket.id);
       const roomCode = await gameManager.createRoom();
-      console.log('✅ Room created:', roomCode);
       socket.join(roomCode);
 
-      // Send initial game state to the creator
       const game = gameManager.getGame(roomCode);
       if (game) {
         socket.emit('gameState', game.getState());
       }
 
-      console.log('📤 Sending createRoom response with code:', roomCode);
       callback({ success: true, roomCode });
     } catch (error) {
-      console.error('❌ Error creating room:', error);
       callback({ success: false, error: 'Failed to create room' });
     }
   });
 
   socket.on('joinRoom', async ({ roomCode, username, ghostType }, callback) => {
     try {
-      console.log('📥 joinRoom event received:', { roomCode, username, ghostType, socketId: socket.id });
       const result = await gameManager.joinRoom(roomCode, socket.id, username || 'Ghost', ghostType);
-      console.log('📤 joinRoom result:', result);
       if (result.success) {
         socket.join(roomCode);
 
-        // Send game state to all players in room
         const game = gameManager.getGame(roomCode);
         if (game) {
           io.to(roomCode).emit('gameState', game.getState());
@@ -108,7 +89,6 @@ io.on('connection', (socket) => {
       }
       callback(result);
     } catch (error) {
-      console.error('❌ Error joining room:', error);
       callback({ success: false, error: 'Failed to join room' });
     }
   });
@@ -181,7 +161,4 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start server
-server.listen(PORT, () => {
-  console.log('🚀 Server started on port', PORT);
-});
+server.listen(PORT);

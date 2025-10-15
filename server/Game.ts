@@ -25,6 +25,7 @@ interface Player {
 class Game {
   private roomCode: string;
   private io: Server;
+  private redisClient: any;
   private players: Map<string, Player>;
   isStarted: boolean;
   private gameLoop: NodeJS.Timeout | null;
@@ -90,9 +91,10 @@ class Game {
   private lastEmoteCalcFrame: number;
   private emoteCalcInterval: number = 3; // Calculate emotes every 3 frames
 
-  constructor(roomCode: string, io: Server) {
+  constructor(roomCode: string, io: Server, redisClient?: any) {
     this.roomCode = roomCode;
     this.io = io;
+    this.redisClient = redisClient || null;
     this.players = new Map();
     this.isStarted = false;
     this.gameLoop = null;
@@ -188,10 +190,9 @@ class Game {
     return set;
   }
 
-  // Static method: Pre-load AI model on server startup (call once at server init)
   static async preloadTrainedAI(): Promise<void> {
     if (Game.aiLoadingPromise) {
-      return Game.aiLoadingPromise; // Return existing promise if already loading
+      return Game.aiLoadingPromise;
     }
 
     Game.aiLoadingPromise = (async () => {
@@ -199,9 +200,7 @@ class Game {
         const modelPath = './models/adversarial_tabular/pacman';
         Game.sharedTrainedAI = new TabularHybridCoordinator();
         await Game.sharedTrainedAI.load(modelPath);
-        //console.log('✅ Pre-loaded trained Pacman AI on server startup');
       } catch (error) {
-        //console.warn('⚠️ Could not pre-load AI, using default AI:', error);
         Game.sharedTrainedAI = null;
       }
     })();
@@ -350,7 +349,6 @@ class Game {
   }
 
   private timeUp(): void {
-    // Time's up - Pacman wins because ghosts didn't catch them 3 times
     this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
     this.stop();
     this.io.to(this.roomCode).emit('gameOver', {
@@ -358,11 +356,8 @@ class Game {
       reason: 'timeout',
       score: this.score
     });
-    // Notify GameManager to clean up immediately
     if (this.onGameEnd) {
-      this.onGameEnd(this.roomCode).catch(err =>
-        console.warn('Error in onGameEnd callback:', err)
-      );
+      this.onGameEnd(this.roomCode).catch(() => {});
     }
   }
 
@@ -589,9 +584,8 @@ class Game {
     this.mode = CONSTANTS.MODES.FRIGHTENED as GameMode;
     this.frightenedStartTime = Date.now();
 
-    // Pacman just ate power pellet - power up!
     const powerUpEmotes = ['😈', '💪', '🔥', '😤', '🎯'];
-    this.setPacmanEmote(powerUpEmotes[Math.floor(Math.random() * powerUpEmotes.length)], 2500);
+    this.setPacmanEmote(this.getRandomEmote(powerUpEmotes), 2500);
 
     // Update all player states
     for (const player of this.players.values()) {
@@ -672,9 +666,8 @@ class Game {
     player.state = 'respawning';
     player.position = { ...STARTING_POSITIONS.ghostHouse };
 
-    // Pacman ate a ghost - celebration!
     const ateGhostEmotes = ['😋', '🤑', '😎', '🍔', '💪'];
-    this.setPacmanEmote(ateGhostEmotes[Math.floor(Math.random() * ateGhostEmotes.length)], 2000);
+    this.setPacmanEmote(this.getRandomEmote(ateGhostEmotes), 2000);
     this.lastGhostEaten = Date.now();
 
     const timer = setTimeout(() => {
@@ -754,98 +747,76 @@ class Game {
       minPelletDist = Math.min(minPelletDist, dist);
     }
 
-    // PRIORITY 1: Victory dance (very few dots left)
     if (currentDotsRemaining < 10 && Math.random() < 0.05) {
-      const victory = ['🎉', '🥳', '🏆', '💃', '🎊'];
-      this.setPacmanEmote(victory[Math.floor(Math.random() * victory.length)], 2000);
+      this.setPacmanEmote(this.getRandomEmote(['🎉', '🥳', '🏆', '💃', '🎊']), 2000);
       return;
     }
 
-    // PRIORITY 2: Surrounded/trapped (multiple ghosts close, different directions)
     if (ghostDirections.size >= 3 && minGhostDist < 8 && Math.random() < 0.08) {
-      const trapped = ['😨', '😰', '🙏', '😭', '💀'];
-      this.setPacmanEmote(trapped[Math.floor(Math.random() * trapped.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['😨', '😰', '🙏', '😭', '💀']), 1500);
       return;
     }
 
-    // PRIORITY 3: Close call (ghost was close but moved away)
     if (this.previousMinGhostDist < 4 && minGhostDist > 7 && minGhostDist < 12 && Math.random() < 0.15) {
-      const relief = ['😅', '😰', '🥵', '💦'];
-      this.setPacmanEmote(relief[Math.floor(Math.random() * relief.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['😅', '😰', '🥵', '💦']), 1500);
       this.previousMinGhostDist = minGhostDist;
       return;
     }
     this.previousMinGhostDist = minGhostDist;
 
-    // PRIORITY 4: Chasing frightened ghosts (in frightened mode)
     if (this.mode === CONSTANTS.MODES.FRIGHTENED && frightenedGhostCount > 0 && Math.random() < 0.01) {
-      const hunting = ['🏃', '🤤', '😋', '🎯'];
-      this.setPacmanEmote(hunting[Math.floor(Math.random() * hunting.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['🏃', '🤤', '😋', '🎯']), 1500);
       return;
     }
 
-    // PRIORITY 5: Just ate ghost recently (within last 3 seconds)
     if (Date.now() - this.lastGhostEaten < 3000 && Math.random() < 0.02) {
-      const proud = ['😎', '💪', '🤑'];
-      this.setPacmanEmote(proud[Math.floor(Math.random() * proud.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['😎', '💪', '🤑']), 1500);
       return;
     }
 
-    // PRIORITY 6: Near power pellet (wants it!)
     if (minPelletDist < 4 && minPelletDist > 0 && this.mode !== CONSTANTS.MODES.FRIGHTENED && Math.random() < 0.015) {
-      const eyeing = ['👀', '👁️', '🤔'];
-      this.setPacmanEmote(eyeing[Math.floor(Math.random() * eyeing.length)], 1200);
+      this.setPacmanEmote(this.getRandomEmote(['👀', '👁️', '🤔']), 1200);
       return;
     }
 
-    // PRIORITY 7: Eating streak (eating lots of dots quickly)
     if (this.dotsEatenStreak > 5 && Math.random() < 0.01) {
-      const munching = ['🤤', '😋', '😊', '🍔'];
-      this.setPacmanEmote(munching[Math.floor(Math.random() * munching.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['🤤', '😋', '😊', '🍔']), 1500);
       return;
     }
 
-    // PRIORITY 8: Low dots remaining (getting close to winning)
     if (currentDotsRemaining < 30 && currentDotsRemaining > 10 && Math.random() < 0.008) {
-      const almostDone = ['🎉', '🏁', '💯'];
-      this.setPacmanEmote(almostDone[Math.floor(Math.random() * almostDone.length)], 2000);
+      this.setPacmanEmote(this.getRandomEmote(['🎉', '🏁', '💯']), 2000);
       return;
     }
 
-    // PRIORITY 9: Very scared (ghost very close)
     if (minGhostDist < 3 && activeGhostCount > 0 && Math.random() < 0.03) {
-      const terrified = ['😱', '💀', '🏃', '💨'];
-      this.setPacmanEmote(terrified[Math.floor(Math.random() * terrified.length)], 1000);
+      this.setPacmanEmote(this.getRandomEmote(['😱', '💀', '🏃', '💨']), 1000);
       return;
     }
 
-    // PRIORITY 10: Scared (ghost close)
     if (minGhostDist < 5 && minGhostDist >= 3 && activeGhostCount > 0 && Math.random() < 0.02) {
-      const scared = ['😱', '😰', '🏃'];
-      this.setPacmanEmote(scared[Math.floor(Math.random() * scared.length)], 1200);
+      this.setPacmanEmote(this.getRandomEmote(['😱', '😰', '🏃']), 1200);
       return;
     }
 
-    // PRIORITY 11: Nervous (ghost nearby)
     if (minGhostDist < 10 && minGhostDist >= 5 && activeGhostCount > 0 && Math.random() < 0.01) {
-      const nervous = ['😰', '😅', '👀', '😬'];
-      this.setPacmanEmote(nervous[Math.floor(Math.random() * nervous.length)], 1500);
+      this.setPacmanEmote(this.getRandomEmote(['😰', '😅', '👀', '😬']), 1500);
       return;
     }
 
-    // PRIORITY 12: Confident (high score)
     if (this.score > 300 && Math.random() < 0.003) {
-      const confident = ['💪', '😤', '🔥', '⚡', '👑'];
-      this.setPacmanEmote(confident[Math.floor(Math.random() * confident.length)], 2000);
+      this.setPacmanEmote(this.getRandomEmote(['💪', '😤', '🔥', '⚡', '👑']), 2000);
       return;
     }
 
-    // PRIORITY 13: Taunting (far away from danger)
     if (minGhostDist > 12 && Math.random() < 0.005) {
-      const taunts = ['😎', '🤪', '😏', '😝', '🥱', '💅'];
-      this.setPacmanEmote(taunts[Math.floor(Math.random() * taunts.length)], 3000);
+      this.setPacmanEmote(this.getRandomEmote(['😎', '🤪', '😏', '😝', '🥱', '💅']), 3000);
       return;
     }
+  }
+
+  private getRandomEmote(emotes: string[]): string {
+    return emotes[Math.floor(Math.random() * emotes.length)];
   }
 
   private setPacmanEmote(emote: string, duration: number): void {
@@ -869,11 +840,8 @@ class Game {
         winner: 'ghosts',
         score: this.score
       });
-      // Notify GameManager to clean up immediately
       if (this.onGameEnd) {
-        this.onGameEnd(this.roomCode).catch(err =>
-          console.warn('Error in onGameEnd callback:', err)
-        );
+        this.onGameEnd(this.roomCode).catch(() => {});
       }
     } else if (this.dots.length === 0) {
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
@@ -882,11 +850,8 @@ class Game {
         winner: 'pacman',
         score: this.score
       });
-      // Notify GameManager to clean up immediately
       if (this.onGameEnd) {
-        this.onGameEnd(this.roomCode).catch(err =>
-          console.warn('Error in onGameEnd callback:', err)
-        );
+        this.onGameEnd(this.roomCode).catch(() => {});
       }
     }
   }
@@ -977,6 +942,78 @@ class Game {
 
   private broadcastState(): void {
     this.io.to(this.roomCode).emit('gameUpdate', this.getDeltaState());
+    this.saveGameState().catch(() => {});
+  }
+
+  // Serialize game state to JSON for Redis storage
+  private async saveGameState(): Promise<void> {
+    if (!this.redisClient) return;
+
+    try {
+      const state = {
+        roomCode: this.roomCode,
+        mode: this.mode,
+        score: this.score,
+        captureCount: this.captureCount,
+        pacmanPosition: this.pacmanPosition,
+        pacmanDirection: this.pacmanDirection,
+        dots: this.dots,
+        powerPellets: this.powerPellets,
+        players: Array.from(this.players.values()).map(p => ({
+          socketId: p.socketId,
+          username: p.username,
+          ghostType: p.ghostType,
+          position: p.position,
+          direction: p.direction,
+          state: p.state,
+          ready: p.ready
+        })),
+        isStarted: this.isStarted,
+        gameStartTime: this.gameStartTime
+      };
+
+      await this.redisClient.set(
+        `gameState:${this.roomCode}`,
+        JSON.stringify(state),
+        { EX: 3600 } // Expire after 1 hour
+      );
+    } catch (err) {
+      // Silent fail - Redis is optional
+    }
+  }
+
+  async restoreGameState(savedState: any): Promise<void> {
+    try {
+      this.mode = savedState.mode;
+      this.score = savedState.score;
+      this.captureCount = savedState.captureCount;
+      this.pacmanPosition = savedState.pacmanPosition;
+      this.pacmanDirection = savedState.pacmanDirection;
+      this.dots = savedState.dots;
+      this.powerPellets = savedState.powerPellets;
+      this.isStarted = savedState.isStarted;
+      this.gameStartTime = savedState.gameStartTime;
+
+      this.players.clear();
+      for (const p of savedState.players) {
+        this.players.set(p.socketId, {
+          socketId: p.socketId,
+          username: p.username,
+          ghostType: p.ghostType,
+          position: p.position,
+          direction: p.direction,
+          state: p.state,
+          respawnTime: null,
+          ready: p.ready
+        });
+        this.previousPlayerPositions.set(p.socketId, { ...p.position });
+      }
+
+      this.dotSet = this.createPositionSet(this.dots);
+      this.pelletSet = this.createPositionSet(this.powerPellets);
+    } catch (err) {
+      throw err;
+    }
   }
 
 }

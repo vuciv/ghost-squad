@@ -291,9 +291,7 @@ export class TabularHybridCoordinator {
       }
     }
 
-    // If no valid actions (shouldn't happen), default to current direction
     if (validActions.length === 0) {
-      console.warn('No valid actions available!');
       validActions.push(currentDir);
     }
 
@@ -439,9 +437,6 @@ export class TabularHybridCoordinator {
     }
 
     fs.writeFileSync(`${path}/tabular_gvfs.json`, JSON.stringify(data, null, 2));
-    
-    const stats = this.getStats();
-    console.log(`Saved ${stats.numGVFs} GVFs (${stats.totalStates} total states)`);
   }
 
   /**
@@ -459,10 +454,6 @@ export class TabularHybridCoordinator {
     for (const entry of data.gvfs) {
       this.gvfs.set(entry.positionKey, TabularGVF.fromJSON(entry.gvf));
     }
-
-    const stats = this.getStats();
-    console.log(`Loaded ${stats.numGVFs} GVFs (${stats.totalStates} total states)`);
-    console.log(`Total actions: ${this.totalActions}, Exploitation mode: ${this.explorationModeChanged}`);
   }
 }
 

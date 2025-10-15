@@ -1168,33 +1168,6 @@ class PacmanBrain {
       isFrightened
     };
 
-    // Log final decision with reasoning
-    let reasoning = '';
-    if (bestMove === null) {
-      reasoning = 'No valid moves available';
-    } else if (bestMove === currentDirection) {
-      reasoning = 'Maintained current direction due to stability or it being optimal';
-    } else {
-      reasoning = `Changed direction from ${currentDirection} to ${bestMove} due to better evaluation`;
-    }
-
-    // Log predicted ghost positions after chosen move (CRITICAL for debugging)
-    if (bestMove !== null) {
-      const nextPacmanPos = this.getPositionFromMove(start, bestMove);
-      const predictions = ghosts.map((g, i) => {
-        const predictedPos = this.predictGhostNextMove(g, nextPacmanPos);
-        // Check for both same-tile collision AND position swap collision
-        const sameTile = predictedPos.x === nextPacmanPos.x && predictedPos.y === nextPacmanPos.y;
-        const swap = g.position.x === nextPacmanPos.x && g.position.y === nextPacmanPos.y &&
-                     predictedPos.x === start.x && predictedPos.y === start.y;
-        const willCollide = sameTile || swap;
-        const collisionFlag = willCollide ? (swap ? '⚠️SWAP!' : '⚠️COLLISION!') : 'safe';
-        return `Ghost${i}: (${g.position.x},${g.position.y})→(${predictedPos.x},${predictedPos.y}) ${collisionFlag}`;
-      }).join(' | ');
-
-    }
-
-
     return { direction: bestMove, debugInfo };
   }
 

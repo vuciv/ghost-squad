@@ -210,15 +210,12 @@ interface EpisodeRecording {
   steps: number;
 }
 
-// Main training loop
 async function train() {
-  console.log('🎮 Starting Tabular Pacman Training...\n');
-
   const coordinator = new TabularHybridCoordinator();
   const env = new TrainingEnv();
   const numEpisodes = 5000;
   const saveInterval = 500;
-  const recordInterval = 50; // Record every 50th episode
+  const recordInterval = 50;
   const modelPath = './models/adversarial_tabular/pacman';
   const recordingsPath = './recordings_training';
 
@@ -299,26 +296,12 @@ async function train() {
       fs.writeFileSync(filename, JSON.stringify(recording, null, 2));
     }
 
-    // Logging
-    if (episode % 10 === 0) {
-      const winRate = ((wins / episode) * 100).toFixed(1);
-      console.log(`Episode ${episode}/${numEpisodes} | Score: ${finalScore} | Best: ${bestScore} | Win Rate: ${winRate}%`);
-    }
-
-    // Save model periodically
     if (episode % saveInterval === 0) {
       await coordinator.save(modelPath);
-      console.log(`\n💾 Model saved at episode ${episode}\n`);
     }
   }
 
-  // Final save
   await coordinator.save(modelPath);
-  console.log('\n✅ Training complete! Final model saved.');
-  console.log(`📊 Best Score: ${bestScore}`);
-  console.log(`🏆 Win Rate: ${((wins / numEpisodes) * 100).toFixed(1)}%`);
-  console.log(`📹 Recordings saved to: ${recordingsPath}/`);
 }
 
-// Run training
-train().catch(console.error);
+train().catch(() => {});

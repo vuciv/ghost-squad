@@ -290,9 +290,6 @@ export class GhostQLearningAgent {
     }
 
     fs.writeFileSync(`${path}/ghost_qlearning.json`, JSON.stringify(data, null, 2));
-
-    const stats = this.getStats();
-    console.log(`Ghost Q-Learning: Saved ${stats.numStates} states (ε=${stats.epsilon.toFixed(3)})`);
   }
 
   /**
@@ -306,8 +303,5 @@ export class GhostQLearningAgent {
     this.epsilon = data.epsilon;
     this.totalSteps = data.totalSteps || 0;
     this.qTable = new Map(data.qTable);
-
-    const stats = this.getStats();
-    console.log(`Ghost Q-Learning: Loaded ${stats.numStates} states (ε=${stats.epsilon.toFixed(3)})`);
   }
 }

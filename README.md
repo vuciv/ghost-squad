@@ -1,147 +1,98 @@
-# 👻 Ghost Squad
+# Ghost Squad
 
-A multiplayer Pacman game where **players control the ghosts** and hunt down an **AI-controlled Pacman**!
+Multiplayer Pacman variant where players control ghosts hunting an AI-controlled Pacman.
 
-## 🎮 Game Overview
+## Overview
 
-Ghost Squad flips the classic Pacman formula on its head. Up to 4 players work together as Blinky, Pinky, Inky, and Clyde to capture the AI Pacman before he clears the maze. When Pacman eats a Power Pellet, the tables turn and the ghosts must flee!
+Up to 4 players work together as Blinky, Pinky, Inky, and Clyde to capture AI Pacman before he clears the maze. When Pacman eats a Power Pellet, ghosts enter Frightened mode.
 
-### Win Conditions
+Win Conditions:
 - **Ghosts Win**: Capture Pacman 3 times
 - **Pacman Wins**: Eat all dots in the maze
 
-### Game Modes
-- **Chase Mode**: Hunt down Pacman (default)
-- **Frightened Mode**: Run away! Pacman can eat you for 10 seconds after eating a Power Pellet
-- **Respawn**: If caught, ghosts respawn after 5 seconds
+Game Modes:
+- **Chase**: Hunt Pacman (default)
+- **Frightened**: Ghosts can be eaten for 10 seconds after power pellet
+- **Respawn**: 5 second delay after capture
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installation
+### Install and Run
 
-1. Install dependencies:
 ```bash
 npm install
-```
-
-2. Start the server:
-```bash
 npm start
 ```
 
-3. Open your browser and navigate to:
-```
-http://localhost:3000
-```
-
-### How to Play
-
-1. **Create a Game**: Click "Create Game" to generate a 4-character room code
-2. **Share the Code**: Give the code to your friends
-3. **Join Game**: Friends enter the code and select a ghost
-4. **Start Game**: Once ready, the host clicks "Start Game"
-5. **Hunt Pacman**: Work together to corner and capture the AI Pacman!
+Open `http://localhost:3000`
 
 ### Controls
-- **Arrow Keys** or **WASD**: Move your ghost
-- Work together with teammates to corner Pacman
 
-## 🛠️ Technical Stack
+- Arrow Keys or WASD: Move
+- Room codes are 4 characters
 
-- **Backend**: Node.js, Express, Socket.IO
-- **Frontend**: HTML5, Phaser 3, CSS
-- **Networking**: WebSocket (real-time multiplayer)
-- **AI**: A* pathfinding with behavior trees
+## Technical Stack
 
-## 🎯 Features
+- Backend: Node.js, Express, Socket.IO
+- Frontend: HTML5, Phaser 3
+- AI: A* pathfinding, Reinforcement Learning (Tabular Hybrid Reward Architecture)
+- Networking: WebSocket real-time multiplayer
 
-### AI Pacman Behavior
-The AI features three behavioral states:
-- **Dot Seeking**: Targets the nearest cluster of dots
-- **Evasion**: Detects nearby ghosts and takes evasive routes
-- **Aggressive**: After eating a Power Pellet, actively hunts ghosts
-
-### Multiplayer
-- Room-based matchmaking with 4-character codes
-- Support for 1-4 players
-- Authoritative server prevents cheating
-- 20 tick/second game state updates
-- Client-side interpolation for smooth movement
-
-### Scoring
-- Base points for capturing Pacman
-- Multiplier bonus when multiple ghosts are nearby
-- Team-based scoring system
-
-## 📁 Project Structure
+## Architecture
 
 ```
-pacman/
-├── client/           # Frontend files
-│   ├── index.html    # Main HTML
-│   ├── style.css     # Styles
-│   ├── game.js       # Phaser game scene
-│   └── app.js        # Client application logic
-├── server/           # Backend files
-│   ├── index.js      # Server entry point
-│   ├── GameManager.js # Manages game rooms
-│   ├── Game.js       # Core game logic
-│   ├── PacmanAI.js   # AI behavior
-│   └── AStar.js      # Pathfinding algorithm
-├── shared/           # Shared constants
-│   ├── constants.js  # Game constants
-│   └── maze.js       # Maze layout
-└── package.json
+server/
+├── Game.ts              # Core game logic
+├── GameManager.ts       # Room management
+├── PacmanAI.ts          # Defensive AI
+├── AggressiveAI.ts      # Power pellet hunting
+├── PacmanBrain.ts       # Predictive lookahead
+└── rl/                  # Reinforcement learning models
+    ├── TabularHybridCoordinator.ts
+    ├── GhostQLearningAgent.ts
+    └── train-*.ts
+
+shared/
+├── maze.ts
+└── constants.ts
+
+client/
+├── game.js              # Phaser scene
+├── app.js               # Socket.IO client
+└── index.html
 ```
 
-## 🎨 Customization
+## Configuration
 
-### Adjust Difficulty
-Edit `shared/constants.js` to modify:
-- Ghost/Pacman speeds
+Edit `shared/constants.ts`:
+- Game tick rate, ghost speeds
 - Frightened mode duration
-- Respawn delays
-- Scoring values
+- Scoring multipliers
 
-### Modify the Maze
-Edit `shared/maze.js` to create custom maze layouts:
+Edit `shared/maze.ts`:
 - `0` = Wall
 - `1` = Dot
 - `2` = Power Pellet
-- `3` = Ghost House (empty space)
+- `3` = Ghost House
 
-## 🐛 Troubleshooting
+## Training Models
 
-**Port already in use?**
+Train reinforcement learning models:
+
+```bash
+npm run build
+node dist/server/rl/train-pacman.js
+node dist/server/rl/train-adversarial.js
+```
+
+Models save to `./models/adversarial_tabular/`
+
+## Port Configuration
+
 ```bash
 PORT=8080 npm start
 ```
 
-**Can't connect to server?**
-- Ensure firewall allows connections on port 3000
-- Check that no other service is using the port
+## License
 
-## 📝 License
-
-MIT License - Feel free to modify and distribute!
-
-## 🤝 Contributing
-
-This is a fun project! Feel free to:
-- Add new ghost AI patterns
-- Implement different maze layouts
-- Add power-ups and special abilities
-- Improve the Pacman AI
-
-## 🎵 Future Enhancements
-
-- [ ] Sound effects and background music
-- [ ] Multiple maze layouts
-- [ ] Difficulty settings
-- [ ] Player statistics and leaderboards
-- [ ] Spectator mode
-- [ ] Mobile support with touch controls
-
----
-
-Made with ❤️ for retro gaming fans
+MIT

@@ -384,31 +384,22 @@ interface EpisodeRecording {
 
 // Main adversarial training loop
 async function train() {
-  console.log('🎮 Starting Adversarial Training (Pacman vs Ghosts)...\n');
-  console.log('🤖 Pacman: Tabular HRA | Ghosts: Direct Q-Learning\n');
-
-  // Create agents
   const pacmanCoordinator = new TabularHybridCoordinator();
-
-  // SHARED Q-LEARNING: All ghosts use ONE agent to learn from each other!
   const sharedGhostAgent = new GhostQLearningAgent();
 
-  // Try to load existing models
   const pacmanModelPath = './models/adversarial_tabular/pacman';
   const ghostModelPath = './models/adversarial_qlearning/ghosts';
 
   try {
     await pacmanCoordinator.load(pacmanModelPath);
-    console.log('✅ Loaded existing Pacman model\n');
   } catch (e) {
-    console.log('📝 Starting with fresh Pacman model\n');
+    // Use fresh model
   }
 
   try {
     await sharedGhostAgent.load(`${ghostModelPath}/shared`);
-    console.log('✅ Loaded existing Shared Ghost Q-Learning model (all 4 ghosts learn together!)\n');
   } catch (e) {
-    console.log('📝 Starting with fresh Shared Ghost Q-Learning model\n');
+    // Use fresh model
   }
 
   const env = new AdversarialTrainingEnv(sharedGhostAgent);
@@ -434,10 +425,6 @@ async function train() {
   const metricsPath = './training_metrics.json';
   const metricsArray: any[] = [];
 
-  console.log('📊 Live stats: live_training_stats.json');
-  console.log('📈 Dashboard metrics: training_metrics.json');
-  console.log('🎯 Training started! Watch the stats below...\n');
-  console.log('─'.repeat(80));
 
   for (let episode = 1; episode <= numEpisodes; episode++) {
     env.reset();
@@ -611,37 +598,6 @@ async function train() {
         }).length / Math.min(recentScores.length, episode)) * 100).toFixed(1)
       : '0.0';
 
-    // Enhanced logging - every episode
-    const resultEmoji = won ? '🏆' : '💀';
-    const trendEmoji = finalScore > avgScore ? '📈' : finalScore < avgScore ? '📉' : '➡️';
-
-    console.log(
-      `${resultEmoji} Ep ${String(episode).padStart(5)} | ` +
-      `Score: ${String(finalScore).padStart(4)} ${trendEmoji} | ` +
-      `Best: ${String(bestPacmanScore).padStart(4)} | ` +
-      `Avg: ${avgScore.toFixed(0).padStart(4)} | ` +
-      `Steps: ${String(stepCount).padStart(4)} | ` +
-      `P: ${pacmanWinRate}% | G: ${ghostWinRate}%`
-    );
-
-    // Extra detailed stats every 50 episodes
-    if (episode % 50 === 0) {
-      console.log('─'.repeat(80));
-      console.log(`📊 Episode ${episode}/${numEpisodes} Summary:`);
-      console.log(`   💯 Best Score: ${bestPacmanScore}`);
-      console.log(`   📈 Avg Score (last ${recentScores.length}): ${avgScore.toFixed(1)}`);
-      console.log(`   ⏱️  Avg Steps (last ${recentSteps.length}): ${avgSteps.toFixed(0)}`);
-      console.log(`   🎮 Pacman Wins: ${pacmanWins} (${pacmanWinRate}%)`);
-      console.log(`   👻 Ghost Wins: ${ghostWins} (${ghostWinRate}%)`);
-
-      // Show learning progress
-      const pacmanStats = pacmanCoordinator.getStats();
-      console.log(`   🧠 Pacman GVFs: ${pacmanStats.numGVFs} (${pacmanStats.totalStates} states)`);
-
-      const ghostStats = sharedGhostAgent.getStats();
-      console.log(`   👻 Shared Ghost Q-Table: ${ghostStats.numStates} states (ε=${ghostStats.epsilon.toFixed(3)}, learned by all 4!)`);
-      console.log('─'.repeat(80));
-    }
 
     // Write live stats to file (every episode)
     const liveStats = {
@@ -683,38 +639,15 @@ async function train() {
       fs.writeFileSync(metricsPath, JSON.stringify(metricsArray, null, 2));
     }
 
-    // Save models periodically
     if (episode % saveInterval === 0) {
       await pacmanCoordinator.save(pacmanModelPath);
       await sharedGhostAgent.save(`${ghostModelPath}/shared`);
-      console.log(`\n💾 Models saved at episode ${episode}\n`);
-
-      // Print stats
-      const pacmanStats = pacmanCoordinator.getStats();
-      console.log(`📊 Pacman: ${pacmanStats.numGVFs} GVFs, ${pacmanStats.totalStates} states`);
-
-      const ghostStats = sharedGhostAgent.getStats();
-      console.log(`👻 Shared Ghost Q-Learning: ${ghostStats.numStates} states, ε=${ghostStats.epsilon.toFixed(3)} (all 4 ghosts learn together!)`);
-      console.log('');
     }
   }
 
-  // Final save
   await pacmanCoordinator.save(pacmanModelPath);
   await sharedGhostAgent.save(`${ghostModelPath}/shared`);
-
-  // Final metrics write
   fs.writeFileSync(metricsPath, JSON.stringify(metricsArray, null, 2));
-
-  console.log('\n✅ Adversarial Training Complete!\n');
-  console.log(`📊 Final Results:`);
-  console.log(`   Pacman Best Score: ${bestPacmanScore}`);
-  console.log(`   Pacman Win Rate: ${((pacmanWins / numEpisodes) * 100).toFixed(1)}%`);
-  console.log(`   Ghost Win Rate: ${((ghostWins / numEpisodes) * 100).toFixed(1)}%`);
-  console.log(`📹 Recordings: ${recordingsPath}/`);
-  console.log(`💾 Models: ${pacmanModelPath} & ${ghostModelPath}/`);
-  console.log(`📈 Dashboard metrics: ${metricsPath}`);
 }
 
-// Run training
-train().catch(console.error);
+train().catch(() => {});
