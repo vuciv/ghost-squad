@@ -163,6 +163,8 @@ class Game {
   }
 
   private async loadTrainedAI(): Promise<void> {
+    this.useTrainedAI = false;
+    return;
     try {
       const modelPath = './models/adversarial_tabular/pacman';
       this.trainedAI = new TabularHybridCoordinator();
