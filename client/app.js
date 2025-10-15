@@ -1,5 +1,4 @@
 // Client-side application logic
-console.log('📱 app.js loaded');
 
 let socket;
 let game;
@@ -26,19 +25,20 @@ const readyStatus = document.getElementById('ready-status');
 
 // Initialize Socket.IO connection
 function initSocket() {
-  console.log('🔌 Initializing Socket.IO...');
-  socket = io();
+  socket = io({
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
+  });
 
   socket.on('connect', () => {
-    console.log('✅ Connected to server, socket ID:', socket.id);
   });
 
   socket.on('connect_error', (error) => {
-    console.error('❌ Connection error:', error);
   });
 
   socket.on('disconnect', () => {
-    console.warn('⚠️ Disconnected from server');
   });
 
   socket.on('gameState', (state) => {
@@ -87,38 +87,28 @@ function initSocket() {
 
 // UI Event Handlers
 createRoomBtn.addEventListener('click', () => {
-  console.log('🎮 Create room button clicked');
   const username = document.getElementById('username-input').value.trim() || 'Ghost';
-  console.log('📝 Username:', username);
-  console.log('🔌 Socket connected:', socket && socket.connected);
 
   socket.emit('createRoom', (response) => {
-    console.log('📥 createRoom response:', response);
     if (response.success) {
       currentRoomCode = response.roomCode;
-      console.log('✅ Room created:', currentRoomCode);
       showLobby(response.roomCode);
 
       // Auto-select first available ghost for room creator
       const firstGhost = 'blinky';
-      console.log('👻 Auto-selecting ghost:', firstGhost);
       socket.emit('joinRoom', {
         roomCode: currentRoomCode,
         username,
         ghostType: firstGhost
       }, (joinResponse) => {
-        console.log('📥 joinRoom response:', joinResponse);
         if (joinResponse.success) {
           selectedGhost = firstGhost;
-          console.log('✅ Joined room as', firstGhost);
           // Mark ghost as selected
           document.querySelector(`.ghost-btn[data-ghost="${firstGhost}"]`)?.classList.add('selected');
         } else {
-          console.error('❌ Failed to join room:', joinResponse.error);
         }
       });
     } else {
-      console.error('❌ Failed to create room:', response.error);
     }
   });
 });

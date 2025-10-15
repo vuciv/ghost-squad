@@ -135,7 +135,6 @@ class GameScene extends Phaser.Scene {
 
     // Listen for full game state (initial load)
     this.socket.on('gameState', (state) => {
-      console.log('[DEBUG] Received full gameState:', state);
       this.gameState = state;
       this.updateGameState(state);
 
