@@ -279,19 +279,17 @@ class Game {
   }
 
   start(): void {
+    if (this.isStarted) return;
     this.isStarted = true;
     this.gameStartTime = Date.now();
 
-    // Set game timer for 3 minutes
     this.gameTimer = setTimeout(() => {
       this.timeUp();
     }, this.GAME_TIME_LIMIT);
 
-    // Send full state when game starts to ensure all clients are synchronized
     this.io.to(this.roomCode).emit('gameState', this.getState());
     this.gameLoop = setInterval(() => this.update(), CONSTANTS.TICK_RATE);
 
-    // Send timer updates every second
     this.startTimerBroadcast();
   }
 
