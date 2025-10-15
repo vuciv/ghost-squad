@@ -145,36 +145,36 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // Listen for delta updates (optimized)
     this.socket.on('gameUpdate', (delta) => {
-      if (!this.gameState) {
-        console.log('[DEBUG] Received delta but no gameState yet');
-        return;
+      if (!this.gameState) return;
+
+      if (delta.p) {
+        const dirMap = { 0: 'UP', 1: 'DOWN', 2: 'LEFT', 3: 'RIGHT' };
+        const dirCode = delta.p[2];
+        this.gameState.pacman.position = { x: delta.p[0], y: delta.p[1] };
+        this.gameState.pacman.direction = typeof dirCode === 'number' ? dirMap[dirCode] : dirCode;
       }
 
-      // Merge delta into full state
-      if (delta.score !== undefined) this.gameState.score = delta.score;
-      if (delta.captureCount !== undefined) this.gameState.captureCount = delta.captureCount;
-      if (delta.mode !== undefined) this.gameState.mode = delta.mode;
-      if (delta.dots !== undefined) this.gameState.dots = delta.dots;
-      if (delta.powerPellets !== undefined) this.gameState.powerPellets = delta.powerPellets;
-
-      // Always update positions
-      if (delta.pacman) {
-        this.gameState.pacman.position = delta.pacman.position;
-        this.gameState.pacman.direction = delta.pacman.direction;
-        if (delta.pacman.emote !== undefined) this.gameState.pacman.emote = delta.pacman.emote;
-      }
-
-      if (delta.players) {
-        delta.players.forEach(updatedPlayer => {
-          const existingPlayer = this.gameState.players.find(p => p.socketId === updatedPlayer.socketId);
-          if (existingPlayer) {
-            existingPlayer.position = updatedPlayer.position;
-            existingPlayer.direction = updatedPlayer.direction;
-            existingPlayer.state = updatedPlayer.state;
+      if (delta.g) {
+        const dirMap = { 0: 'UP', 1: 'DOWN', 2: 'LEFT', 3: 'RIGHT' };
+        delta.g.forEach((data, idx) => {
+          if (this.gameState.players[idx]) {
+            this.gameState.players[idx].position = { x: data[0], y: data[1] };
+            const dirCode = data[2];
+            this.gameState.players[idx].direction = typeof dirCode === 'number' ? dirMap[dirCode] : dirCode;
+            this.gameState.players[idx].state = data[3] ? 'frightened' : 'active';
           }
         });
+      }
+
+      if (delta.s !== undefined) this.gameState.score = delta.s;
+      if (delta.c !== undefined) this.gameState.captureCount = delta.c;
+      if (delta.m !== undefined) this.gameState.mode = delta.m;
+      if (delta.d !== undefined) {
+        this.gameState.dots = this.gameState.dots.slice(0, delta.d);
+      }
+      if (delta.pp !== undefined) {
+        this.gameState.powerPellets = this.gameState.powerPellets.slice(0, delta.pp);
       }
 
       this.updateGameState(this.gameState);

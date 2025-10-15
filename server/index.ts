@@ -22,21 +22,11 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  // Performance optimizations for production
-  perMessageDeflate: {
-    threshold: 1024, // Only compress messages larger than 1KB
-    zlibDeflateOptions: {
-      chunkSize: 8 * 1024
-    }
-  },
-  httpCompression: {
-    threshold: 1024
-  },
-  transports: ['websocket', 'polling'],
-  upgradeTimeout: 10000,
-  pingTimeout: 30000,
-  pingInterval: 25000,
-  maxHttpBufferSize: 1e6
+  perMessageDeflate: false,
+  transports: ['websocket'],
+  pingTimeout: 60000,
+  pingInterval: 20000,
+  maxHttpBufferSize: 1e4
 });
 
 Promise.all([pubClient.connect(), subClient.connect()]).then(() => {

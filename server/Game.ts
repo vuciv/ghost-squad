@@ -84,6 +84,8 @@ class Game {
   };
   private dotsChanged: boolean;
   private pelletsChanged: boolean;
+  private lastRedisSave: number = 0;
+  private readonly REDIS_SAVE_INTERVAL = 30000;
 
   // Performance optimization: cache for spatial lookups
   private dotSet: Set<string>;
@@ -891,50 +893,39 @@ class Game {
   }
 
   private getDeltaState() {
+    const dirMap = { 'UP': 0, 'DOWN': 1, 'LEFT': 2, 'RIGHT': 3 };
     const delta: any = {
-      // Always send positions (critical for gameplay)
-      pacman: {
-        position: this.pacmanPosition,
-        direction: this.pacmanDirection
-      },
-      players: Array.from(this.players.values()).map(p => ({
-        socketId: p.socketId,
-        position: p.position,
-        direction: p.direction,
-        state: p.state
-      }))
+      p: [this.pacmanPosition.x, this.pacmanPosition.y, dirMap[this.pacmanDirection] || 0],
+      g: Array.from(this.players.values()).map(p => [
+        p.position.x, p.position.y, dirMap[p.direction] || 0, p.state === 'frightened' ? 1 : 0
+      ])
     };
 
-    // Only include changed data
     if (this.score !== this.lastBroadcastState.score) {
-      delta.score = this.score;
+      delta.s = this.score;
       this.lastBroadcastState.score = this.score;
     }
 
     if (this.captureCount !== this.lastBroadcastState.captureCount) {
-      delta.captureCount = this.captureCount;
+      delta.c = this.captureCount;
       this.lastBroadcastState.captureCount = this.captureCount;
     }
 
     if (this.mode !== this.lastBroadcastState.mode) {
-      delta.mode = this.mode;
+      delta.m = this.mode;
       this.lastBroadcastState.mode = this.mode;
     }
 
     if (this.dotsChanged) {
-      delta.dots = this.dots;
+      delta.d = this.dots.length;
       this.lastBroadcastState.dotsCount = this.dots.length;
       this.dotsChanged = false;
     }
 
     if (this.pelletsChanged) {
-      delta.powerPellets = this.powerPellets;
+      delta.pp = this.powerPellets.length;
       this.lastBroadcastState.pelletsCount = this.powerPellets.length;
       this.pelletsChanged = false;
-    }
-
-    if (this.pacmanEmote) {
-      delta.pacman.emote = this.pacmanEmote;
     }
 
     return delta;
@@ -942,7 +933,12 @@ class Game {
 
   private broadcastState(): void {
     this.io.to(this.roomCode).emit('gameUpdate', this.getDeltaState());
-    this.saveGameState().catch(() => {});
+
+    const now = Date.now();
+    if (now - this.lastRedisSave > this.REDIS_SAVE_INTERVAL) {
+      this.lastRedisSave = now;
+      this.saveGameState().catch(() => {});
+    }
   }
 
   // Serialize game state to JSON for Redis storage
