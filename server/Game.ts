@@ -48,6 +48,10 @@ class Game {
   private emoteTimer: NodeJS.Timeout | null;
   private previousPacmanPosition: Position;
 
+  // Static pre-loaded AI shared across all game instances
+  private static sharedTrainedAI: TabularHybridCoordinator | null = null;
+  private static aiLoadingPromise: Promise<void> | null = null;
+
   // Personality tracking
   private lastDotsEaten: number;
   private dotsEatenStreak: number;
@@ -60,7 +64,11 @@ class Game {
   private respawnTimers: Map<string, NodeJS.Timeout>;
   private gameTimer: NodeJS.Timeout | null;
   private gameStartTime: number | null;
+  private timerBroadcastInterval: NodeJS.Timeout | null;
   private readonly GAME_TIME_LIMIT = 180000; // 3 minutes in milliseconds
+
+  // Cleanup callback when game ends
+  private onGameEnd: ((roomCode: string) => Promise<void>) | null = null;
 
   // Collision tracking
   private previousPlayerPositions: Map<string, Position>;
@@ -76,6 +84,12 @@ class Game {
   private dotsChanged: boolean;
   private pelletsChanged: boolean;
 
+  // Performance optimization: cache for spatial lookups
+  private dotSet: Set<string>;
+  private pelletSet: Set<string>;
+  private lastEmoteCalcFrame: number;
+  private emoteCalcInterval: number = 3; // Calculate emotes every 3 frames
+
   constructor(roomCode: string, io: Server) {
     this.roomCode = roomCode;
     this.io = io;
@@ -90,20 +104,22 @@ class Game {
     this.dots = this.initializeDots();
     this.powerPellets = this.initializePowerPellets();
 
+    // Initialize spatial caches for O(1) collision lookups
+    this.dotSet = this.createPositionSet(this.dots);
+    this.pelletSet = this.createPositionSet(this.powerPellets);
+    this.lastEmoteCalcFrame = 0;
+
     // Pacman AI
     this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
     this.aggressiveAI = new AggressiveAI();
-    this.trainedAI = null;
-    this.useTrainedAI = false;
+    this.trainedAI = Game.sharedTrainedAI; // Use pre-loaded AI
+    this.useTrainedAI = !!Game.sharedTrainedAI;
     this.stepCount = 0;
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.previousPacmanPosition = { ...STARTING_POSITIONS.pacman };
     this.pacmanDirection = 'RIGHT';
     this.pacmanEmote = '';
     this.emoteTimer = null;
-
-    // Load trained AI model
-    this.loadTrainedAI();
 
     // Personality tracking
     this.lastDotsEaten = 0;
@@ -117,6 +133,7 @@ class Game {
     this.respawnTimers = new Map();
     this.gameTimer = null;
     this.gameStartTime = null;
+    this.timerBroadcastInterval = null;
 
     // Collision tracking
     this.previousPlayerPositions = new Map();
@@ -162,19 +179,38 @@ class Game {
     return pellets;
   }
 
-  private async loadTrainedAI(): Promise<void> {
-    this.useTrainedAI = false;
-    return;
-    try {
-      const modelPath = './models/adversarial_tabular/pacman';
-      this.trainedAI = new TabularHybridCoordinator();
-      //await this.trainedAI.load(modelPath);
-      this.useTrainedAI = true;
-      //console.log('✅ Loaded trained Pacman AI successfully!');
-    } catch (error) {
-      //console.warn('⚠️ Could not load trained AI, using default AI:', error);
-      this.useTrainedAI = false;
+  // Helper: Convert position array to Set for O(1) lookups
+  private createPositionSet(positions: Position[]): Set<string> {
+    const set = new Set<string>();
+    for (const pos of positions) {
+      set.add(`${pos.x},${pos.y}`);
     }
+    return set;
+  }
+
+  // Static method: Pre-load AI model on server startup (call once at server init)
+  static async preloadTrainedAI(): Promise<void> {
+    if (Game.aiLoadingPromise) {
+      return Game.aiLoadingPromise; // Return existing promise if already loading
+    }
+
+    Game.aiLoadingPromise = (async () => {
+      try {
+        const modelPath = './models/adversarial_tabular/pacman';
+        Game.sharedTrainedAI = new TabularHybridCoordinator();
+        await Game.sharedTrainedAI.load(modelPath);
+        //console.log('✅ Pre-loaded trained Pacman AI on server startup');
+      } catch (error) {
+        //console.warn('⚠️ Could not pre-load AI, using default AI:', error);
+        Game.sharedTrainedAI = null;
+      }
+    })();
+
+    return Game.aiLoadingPromise;
+  }
+
+  setOnGameEnd(callback: (roomCode: string) => Promise<void>): void {
+    this.onGameEnd = callback;
   }
 
   addPlayer(socketId: string, username: string, ghostType: GhostType): void {
@@ -259,9 +295,12 @@ class Game {
   }
 
   private startTimerBroadcast(): void {
-    const timerInterval = setInterval(() => {
+    this.timerBroadcastInterval = setInterval(() => {
       if (!this.isStarted || this.mode === CONSTANTS.MODES.GAME_OVER) {
-        clearInterval(timerInterval);
+        if (this.timerBroadcastInterval) {
+          clearInterval(this.timerBroadcastInterval);
+          this.timerBroadcastInterval = null;
+        }
         return;
       }
       this.io.to(this.roomCode).emit('timerUpdate', {
@@ -292,6 +331,10 @@ class Game {
       clearTimeout(this.emoteTimer);
       this.emoteTimer = null;
     }
+    if (this.timerBroadcastInterval) {
+      clearInterval(this.timerBroadcastInterval);
+      this.timerBroadcastInterval = null;
+    }
     for (const timer of this.respawnTimers.values()) {
       clearTimeout(timer);
     }
@@ -302,6 +345,8 @@ class Game {
     this.previousPlayerPositions.clear();
     this.dots = [];
     this.powerPellets = [];
+    this.dotSet.clear();
+    this.pelletSet.clear();
   }
 
   private timeUp(): void {
@@ -313,6 +358,12 @@ class Game {
       reason: 'timeout',
       score: this.score
     });
+    // Notify GameManager to clean up immediately
+    if (this.onGameEnd) {
+      this.onGameEnd(this.roomCode).catch(err =>
+        console.warn('Error in onGameEnd callback:', err)
+      );
+    }
   }
 
   getTimeRemaining(): number {
@@ -347,8 +398,10 @@ class Game {
     // Check win/lose conditions
     this.checkGameOver();
 
-    // Update Pacman emotes
-    this.updatePacmanEmote();
+    // Update Pacman emotes every N frames to reduce CPU
+    if (this.lastEmoteCalcFrame++ % this.emoteCalcInterval === 0) {
+      this.updatePacmanEmote();
+    }
 
     // Broadcast state
     this.broadcastState();
@@ -504,18 +557,28 @@ class Game {
   }
 
   private checkDotCollision(x: number, y: number): void {
-    const dotIndex = this.dots.findIndex(dot => dot.x === x && dot.y === y);
-    if (dotIndex !== -1) {
-      this.dots.splice(dotIndex, 1);
+    const key = `${x},${y}`;
+    if (this.dotSet.has(key)) {
+      // Remove from both set and array
+      this.dotSet.delete(key);
+      const dotIndex = this.dots.findIndex(dot => dot.x === x && dot.y === y);
+      if (dotIndex !== -1) {
+        this.dots.splice(dotIndex, 1);
+      }
       this.score += CONSTANTS.DOT_VALUE;
       this.dotsChanged = true;
     }
   }
 
   private checkPowerPelletCollision(x: number, y: number): void {
-    const pelletIndex = this.powerPellets.findIndex(p => p.x === x && p.y === y);
-    if (pelletIndex !== -1) {
-      this.powerPellets.splice(pelletIndex, 1);
+    const key = `${x},${y}`;
+    if (this.pelletSet.has(key)) {
+      // Remove from both set and array
+      this.pelletSet.delete(key);
+      const pelletIndex = this.powerPellets.findIndex(p => p.x === x && p.y === y);
+      if (pelletIndex !== -1) {
+        this.powerPellets.splice(pelletIndex, 1);
+      }
       this.score += CONSTANTS.POWER_PELLET_VALUE;
       this.pelletsChanged = true;
       this.activateFrightenedMode();
@@ -649,19 +712,26 @@ class Game {
     // Don't override existing emotes
     if (this.emoteTimer) return;
 
-    // Calculate ghost distances and context
+    // Single pass through players to collect all needed data efficiently
     let minGhostDist = Infinity;
     let activeGhostCount = 0;
     let frightenedGhostCount = 0;
-    const ghostDistances: number[] = [];
+    const ghostDirections = new Set<string>();
 
     for (const player of this.players.values()) {
+      const dx = player.position.x - this.pacmanPosition.x;
+      const dy = player.position.y - this.pacmanPosition.y;
+      const dist = Math.abs(dx) + Math.abs(dy);
+
       if (player.state === 'active') {
-        const dist = Math.abs(player.position.x - this.pacmanPosition.x) +
-                    Math.abs(player.position.y - this.pacmanPosition.y);
         minGhostDist = Math.min(minGhostDist, dist);
-        ghostDistances.push(dist);
         activeGhostCount++;
+        // Calculate direction for surrounded detection (in same pass)
+        if (Math.abs(dx) > Math.abs(dy)) {
+          ghostDirections.add(dx > 0 ? 'right' : 'left');
+        } else {
+          ghostDirections.add(dy > 0 ? 'down' : 'up');
+        }
       } else if (player.state === 'frightened') {
         frightenedGhostCount++;
       }
@@ -676,7 +746,7 @@ class Game {
     }
     this.lastDotsEaten = currentDotsRemaining;
 
-    // Calculate closest power pellet distance
+    // Calculate closest power pellet distance (lazy evaluation)
     let minPelletDist = Infinity;
     for (const pellet of this.powerPellets) {
       const dist = Math.abs(pellet.x - this.pacmanPosition.x) +
@@ -684,22 +754,8 @@ class Game {
       minPelletDist = Math.min(minPelletDist, dist);
     }
 
-    // Count ghosts in different directions (for surrounded detection)
-    const ghostDirections = new Set<string>();
-    for (const player of this.players.values()) {
-      if (player.state === 'active') {
-        const dx = player.position.x - this.pacmanPosition.x;
-        const dy = player.position.y - this.pacmanPosition.y;
-        if (Math.abs(dx) > Math.abs(dy)) {
-          ghostDirections.add(dx > 0 ? 'right' : 'left');
-        } else {
-          ghostDirections.add(dy > 0 ? 'down' : 'up');
-        }
-      }
-    }
-
     // PRIORITY 1: Victory dance (very few dots left)
-    if (this.dots.length < 10 && Math.random() < 0.05) {
+    if (currentDotsRemaining < 10 && Math.random() < 0.05) {
       const victory = ['🎉', '🥳', '🏆', '💃', '🎊'];
       this.setPacmanEmote(victory[Math.floor(Math.random() * victory.length)], 2000);
       return;
@@ -750,7 +806,7 @@ class Game {
     }
 
     // PRIORITY 8: Low dots remaining (getting close to winning)
-    if (this.dots.length < 30 && this.dots.length > 10 && Math.random() < 0.008) {
+    if (currentDotsRemaining < 30 && currentDotsRemaining > 10 && Math.random() < 0.008) {
       const almostDone = ['🎉', '🏁', '💯'];
       this.setPacmanEmote(almostDone[Math.floor(Math.random() * almostDone.length)], 2000);
       return;
@@ -813,6 +869,12 @@ class Game {
         winner: 'ghosts',
         score: this.score
       });
+      // Notify GameManager to clean up immediately
+      if (this.onGameEnd) {
+        this.onGameEnd(this.roomCode).catch(err =>
+          console.warn('Error in onGameEnd callback:', err)
+        );
+      }
     } else if (this.dots.length === 0) {
       this.mode = CONSTANTS.MODES.GAME_OVER as GameMode;
       this.stop();
@@ -820,6 +882,12 @@ class Game {
         winner: 'pacman',
         score: this.score
       });
+      // Notify GameManager to clean up immediately
+      if (this.onGameEnd) {
+        this.onGameEnd(this.roomCode).catch(err =>
+          console.warn('Error in onGameEnd callback:', err)
+        );
+      }
     }
   }
 

@@ -3,9 +3,20 @@ services:
     name: ghost-squad
     env: node
     buildCommand: npm install
-    startCommand: npm run server
+    startCommand: npm run build && node dist/server/index.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ghost-squad-redis
+          property: connectionString
+    autoDeploy: true
+
+  - type: redis
+    name: ghost-squad-redis
+    plan: starter
+    ipAllowList: [] # Allow only from the web service
