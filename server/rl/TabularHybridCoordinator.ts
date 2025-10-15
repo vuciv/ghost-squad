@@ -170,27 +170,40 @@ export class TabularHybridCoordinator {
       }
     }
 
-    // STEP 2: Add ghost avoidance - DIRECT DISTANCE-BASED (more reliable than GVFs)
-    // GVFs learn slowly for ghosts, so use immediate distance-based penalties
+    // STEP 2: Ghost handling - Match HRA paper's -1000 multiplier
+    // Paper (line 630): "A ghosts' multiplier of -1,000 has demonstrated to be
+    // a fair balance between gaining points and not being killed"
     for (const ghost of state.ghosts) {
-      if (!ghost.isFrightened) {
-        for (const action of ['UP', 'DOWN', 'LEFT', 'RIGHT'] as Direction[]) {
-          const nextPos = this.getNextPosition(currentPos, action);
-          const distToGhost = Math.abs(nextPos.x - ghost.position.x) + Math.abs(nextPos.y - ghost.position.y);
+      for (const action of ['UP', 'DOWN', 'LEFT', 'RIGHT'] as Direction[]) {
+        const nextPos = this.getNextPosition(currentPos, action);
+        const distToGhost = Math.abs(nextPos.x - ghost.position.x) + Math.abs(nextPos.y - ghost.position.y);
 
-          // Balanced penalties for being near ghosts:
-          // Distance 0 (collision): -200 (strong but not paralyzing)
-          // Distance 1 (adjacent): -100 (dangerous)
-          // Distance 2: -50 (caution)
-          // Distance 3+: -20 / dist (awareness)
+        if (!ghost.isFrightened) {
+          // Regular ghosts: AVOID with -1000 multiplier
           if (distToGhost === 0) {
-            aggregatedQ[action] += -200; // Strong penalty but not absolute
+            aggregatedQ[action] += -1000; // Match paper's multiplier
           } else if (distToGhost === 1) {
-            aggregatedQ[action] += -100; // Dangerous
+            aggregatedQ[action] += -500; // Adjacent = very dangerous
           } else if (distToGhost === 2) {
-            aggregatedQ[action] += -50; // Caution
+            aggregatedQ[action] += -250; // Close = dangerous
           } else if (distToGhost <= 4) {
-            aggregatedQ[action] += -20 / distToGhost; // Mild awareness
+            aggregatedQ[action] += -100 / distToGhost; // Nearby = caution
+          } else if (distToGhost <= 8) {
+            aggregatedQ[action] += -50 / distToGhost; // Medium range = awareness
+          }
+        } else {
+          // Blue ghosts: CHASE with +1000 multiplier (invert the avoidance logic!)
+          // Paper uses +1000 for blue ghosts, we add distance-based bonuses too
+          if (distToGhost === 0) {
+            aggregatedQ[action] += 1000; // Eat them!
+          } else if (distToGhost === 1) {
+            aggregatedQ[action] += 500; // Almost there!
+          } else if (distToGhost === 2) {
+            aggregatedQ[action] += 250; // Close
+          } else if (distToGhost <= 4) {
+            aggregatedQ[action] += 100 / distToGhost; // Chase them
+          } else if (distToGhost <= 8) {
+            aggregatedQ[action] += 50 / distToGhost; // Hunt them down
           }
         }
       }

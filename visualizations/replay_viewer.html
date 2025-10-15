@@ -440,13 +440,31 @@
             pauseBtn.disabled = false;
             restartBtn.disabled = false;
 
-            // Update info
+            // Update info - handle both old and adversarial format
             document.getElementById('episodeNum').textContent = recording.episode;
-            document.getElementById('dotsValue').textContent = recording.dotsCollected;
-            document.getElementById('timeValue').textContent = (recording.survivalTime / 1000).toFixed(1) + 's';
-            
-            let status = recording.won ? '🏆 WIN' : recording.died ? '💀 DIED' : '⏱️ TIMEOUT';
-            document.getElementById('statusValue').textContent = status;
+
+            // Check if this is adversarial training format (has recording.result field)
+            if (recording.result) {
+                // Adversarial format
+                const firstFrame = recording.frames[0];
+                const lastFrame = recording.frames[recording.frames.length - 1];
+                const dotsCollected = firstFrame.dots.length - lastFrame.dots.length;
+
+                document.getElementById('dotsValue').textContent = dotsCollected;
+                document.getElementById('timeValue').textContent = (recording.steps / 60).toFixed(1) + 's';
+
+                let status = recording.result === 'PACMAN_WIN' ? '🏆 PACMAN WIN' :
+                            recording.result === 'CAUGHT_BY_GHOST' ? '👻 GHOST WIN' :
+                            '⏱️ TIMEOUT';
+                document.getElementById('statusValue').textContent = status;
+            } else {
+                // Original format
+                document.getElementById('dotsValue').textContent = recording.dotsCollected || 0;
+                document.getElementById('timeValue').textContent = ((recording.survivalTime || 0) / 1000).toFixed(1) + 's';
+
+                let status = recording.won ? '🏆 WIN' : recording.died ? '💀 DIED' : '⏱️ TIMEOUT';
+                document.getElementById('statusValue').textContent = status;
+            }
 
             renderFrame(0);
         }
@@ -509,7 +527,23 @@
             if (!recording || !recording.frames[frameIndex]) return;
 
             const frame = recording.frames[frameIndex];
-            const state = frame.state;
+
+            // Handle both formats: adversarial (frame.pacman) vs original (frame.state)
+            let state;
+            if (frame.pacman) {
+                // Adversarial format - convert to state format
+                state = {
+                    position: frame.pacman.position,
+                    direction: frame.pacman.direction,
+                    dots: frame.dots,
+                    powerPellets: frame.powerPellets,
+                    ghosts: frame.ghosts,
+                    score: frame.score
+                };
+            } else {
+                // Original format
+                state = frame.state;
+            }
 
             // Clear canvas
             ctx.fillStyle = '#000';
@@ -698,8 +732,8 @@
 
             // Update info
             document.getElementById('scoreValue').textContent = state.score;
-            document.getElementById('actionValue').textContent = frame.action;
-            document.getElementById('frameInfo').textContent = 
+            document.getElementById('actionValue').textContent = frame.action || state.direction;
+            document.getElementById('frameInfo').textContent =
                 `Frame ${frameIndex + 1} / ${recording.frames.length}`;
         }
     </script>

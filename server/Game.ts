@@ -594,8 +594,7 @@ class Game {
       }
 
       if (collisionDetected) {
-
-        if (this.mode === CONSTANTS.MODES.FRIGHTENED) {
+        if (player.state === 'frightened') {
           this.respawnGhost(player);
         } else {
           this.ghostCapturedPacman(player);

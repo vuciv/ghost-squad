@@ -22,12 +22,14 @@ export class TabularGVF {
   private alpha: number; // Learning rate
   private gamma: number; // Discount factor
   private actionMap: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+  private useDistanceShaping: boolean; // For moving targets (ghosts hunting Pacman)
 
-  constructor(targetPosition: Position, alpha: number = 1.0, gamma: number = 0.99) {
+  constructor(targetPosition: Position, alpha: number = 1.0, gamma: number = 0.99, useDistanceShaping: boolean = false) {
     this.qTable = new Map();
     this.targetPosition = targetPosition;
     this.alpha = alpha;
     this.gamma = gamma;
+    this.useDistanceShaping = useDistanceShaping;
   }
 
   /**
@@ -116,10 +118,30 @@ export class TabularGVF {
   /**
    * Compute pseudo-reward for this GVF
    * Paper: +1 when at target position, 0 otherwise
+   *
+   * For moving targets (ghosts hunting Pacman), use distance shaping:
+   * reward = max(0, 1 - distance/maxDistance)
+   * This provides incremental feedback for getting closer!
    */
   private computePseudoReward(position: Position): number {
-    return (position.x === this.targetPosition.x && 
-            position.y === this.targetPosition.y) ? 1.0 : 0.0;
+    const atTarget = (position.x === this.targetPosition.x &&
+                      position.y === this.targetPosition.y);
+
+    if (!this.useDistanceShaping) {
+      // Original: binary reward (1 at target, 0 elsewhere)
+      return atTarget ? 1.0 : 0.0;
+    }
+
+    // Distance shaping: reward for getting closer
+    const distance = Math.abs(position.x - this.targetPosition.x) +
+                     Math.abs(position.y - this.targetPosition.y);
+
+    // Maximum distance in the maze is ~56 (28 width + 31 height)
+    // Scale: 1.0 at target, decreases linearly with distance, 0 at maxDist
+    const maxDistance = 30; // Reasonable max Manhattan distance
+    const reward = Math.max(0, 1.0 - distance / maxDistance);
+
+    return reward;
   }
 
   /**
@@ -162,6 +184,7 @@ export class TabularGVF {
       targetPosition: this.targetPosition,
       alpha: this.alpha,
       gamma: this.gamma,
+      useDistanceShaping: this.useDistanceShaping,
       qTable: Array.from(this.qTable.entries())
     };
   }
@@ -170,7 +193,12 @@ export class TabularGVF {
    * Load Q-table from JSON
    */
   static fromJSON(data: any): TabularGVF {
-    const gvf = new TabularGVF(data.targetPosition, data.alpha, data.gamma);
+    const gvf = new TabularGVF(
+      data.targetPosition,
+      data.alpha,
+      data.gamma,
+      data.useDistanceShaping || false
+    );
     gvf.qTable = new Map(data.qTable);
     return gvf;
   }
