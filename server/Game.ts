@@ -928,6 +928,10 @@ class Game {
       this.pelletsChanged = false;
     }
 
+    if (this.pacmanEmote) {
+      delta.e = this.pacmanEmote;
+    }
+
     return delta;
   }
 

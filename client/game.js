@@ -171,6 +171,7 @@ class GameScene extends Phaser.Scene {
       if (delta.m !== undefined) this.gameState.mode = delta.m;
       if (delta.d !== undefined) this.gameState.dots = delta.d;
       if (delta.pp !== undefined) this.gameState.powerPellets = delta.pp;
+      if (delta.e !== undefined) this.gameState.pacman.emote = delta.e;
 
       this.updateGameState(this.gameState);
     });
