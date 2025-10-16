@@ -21,6 +21,7 @@ const readyBtn = document.getElementById('ready-btn');
 const retryBtn = document.getElementById('retry-btn');
 const backToMenuBtn = document.getElementById('back-to-menu-btn');
 const roomCodeDisplay = document.getElementById('room-code-display');
+const roomCodeBadge = document.getElementById('room-code-badge');
 const playersList = document.getElementById('players-list-compact');
 const readyStatus = document.getElementById('ready-status');
 
@@ -130,12 +131,14 @@ roomCodeInput.addEventListener('keypress', (e) => {
 document.querySelectorAll('.ghost-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     const ghostType = btn.dataset.ghost;
-    const username = document.getElementById('username-input').value || 'Ghost';
-
+    const potentialUsernames = ['inky', 'pinky', 'clyde', 'blinky'];
+    const funPostfixes = ['lover', 'fan3000', 'the third', 'otaku', 'hater']
+    const funRandomUsername = potentialUsernames[Math.floor(Math.random() * potentialUsernames.length)];
+    const funRandomPostfix = funPostfixes[Math.floor(Math.random() * funPostfixes.length)];
     // Try to join with this ghost
     socket.emit('joinRoom', {
       roomCode: currentRoomCode,
-      username: 'Ghost',
+      username: funRandomUsername + '-' + funRandomPostfix,
       ghostType,
       aiType: selectedAI
     }, (response) => {
@@ -198,9 +201,10 @@ backToMenuBtn.addEventListener('click', () => {
 });
 
 // Click-to-copy room code
-roomCodeDisplay.addEventListener('click', () => {
+roomCodeBadge.addEventListener('click', () => {
   const code = roomCodeDisplay.textContent;
-  navigator.clipboard.writeText(code).then(() => {
+  const url = `${window.location.origin}?code=${code}`;
+  navigator.clipboard.writeText(url).then(() => {
     // Visual feedback
     roomCodeDisplay.classList.add('copied');
     const originalContent = roomCodeDisplay.textContent;

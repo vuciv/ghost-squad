@@ -684,8 +684,7 @@ class Game {
     this.lastGhostEaten = Date.now();
 
     const timer = setTimeout(() => {
-      player.state = this.mode === CONSTANTS.MODES.FRIGHTENED ? 'frightened' : 'active';
-      player.position = { ...STARTING_POSITIONS[player.ghostType] };
+      player.state = 'active' as PlayerState;
       this.respawnTimers.delete(player.socketId);
     }, CONSTANTS.RESPAWN_DELAY);
 
