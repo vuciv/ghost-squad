@@ -38,12 +38,24 @@ class GameManager {
     });
   }
 
-  async createRoom(): Promise<string> {
+  async createRoom(creatorSocketId?: string, creatorUsername?: string): Promise<{ roomCode: string; assignedGhost?: GhostType }> {
     const roomCode = this.generateRoomCode();
     const game = new Game(roomCode, this.io, this.redisClient);
 
     this.games.set(roomCode, game);
     this.setupGameEndCallback(game);
+
+    let assignedGhost: GhostType | undefined = undefined;
+
+    // AUTOASSIGN: If creator socket ID provided, add them to the game immediately with first ghost
+    if (creatorSocketId) {
+      const firstGhost = game.getFirstAvailableGhost();
+      if (firstGhost) {
+        game.addPlayer(creatorSocketId, creatorUsername || 'Ghost', firstGhost);
+        this.playerRooms.set(creatorSocketId, roomCode);
+        assignedGhost = firstGhost;
+      }
+    }
 
     if (this.redisClient) {
       setImmediate(() => {
@@ -52,7 +64,7 @@ class GameManager {
           JSON.stringify({
             instanceId: this.instanceId,
             createdAt: Date.now(),
-            playerCount: 0
+            playerCount: game.getPlayerCount()
           }),
           { EX: 3600 }
         ).catch(() => {});
@@ -65,7 +77,7 @@ class GameManager {
       }
     }, 3600000);
 
-    return roomCode;
+    return { roomCode, assignedGhost };
   }
 
   createRoomWithCode(roomCode: string): Game {
@@ -95,7 +107,7 @@ class GameManager {
     this.games.delete(roomCode);
   }
 
-  async joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType, aiType?: string): Promise<{ success: boolean; error?: string }> {
+  async joinRoom(roomCode: string, socketId: string, username: string, ghostType?: GhostType, aiType?: string): Promise<{ success: boolean; error?: string; assignedGhost?: GhostType }> {
     let game = this.games.get(roomCode);
 
     if (!game) {
@@ -126,15 +138,21 @@ class GameManager {
       return { success: false, error: 'Room is full' };
     }
 
-    if (game.isGhostTaken(ghostType)) {
-      return { success: false, error: 'Ghost already taken' };
+    // AUTOASSIGN GHOST: If no ghost specified or the requested ghost is taken, assign first available
+    let assignedGhost: GhostType | undefined = ghostType;
+    if (!assignedGhost || game.isGhostTaken(assignedGhost)) {
+      const available = game.getFirstAvailableGhost();
+      if (!available) {
+        return { success: false, error: 'No ghosts available' };
+      }
+      assignedGhost = available;
     }
 
     if (aiType && !game.isStarted) {
       game.setAIType(aiType);
     }
 
-    game.addPlayer(socketId, username, ghostType);
+    game.addPlayer(socketId, username, assignedGhost);
     this.playerRooms.set(socketId, roomCode);
 
     if (this.redisClient) {
@@ -151,7 +169,7 @@ class GameManager {
       });
     }
 
-    return { success: true };
+    return { success: true, assignedGhost };
   }
 
   getGame(roomCode: string): Game | undefined {

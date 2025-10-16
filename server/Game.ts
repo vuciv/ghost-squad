@@ -248,6 +248,16 @@ class Game {
     return false;
   }
 
+  getFirstAvailableGhost(): GhostType | null {
+    const ghosts: GhostType[] = ['blinky', 'pinky', 'inky', 'clyde'];
+    for (const ghost of ghosts) {
+      if (!this.isGhostTaken(ghost)) {
+        return ghost;
+      }
+    }
+    return null; // All ghosts taken
+  }
+
   isFull(): boolean {
     return this.players.size >= 4;
   }

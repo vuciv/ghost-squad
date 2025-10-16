@@ -50,17 +50,17 @@ require('./Game').preloadTrainedAI().catch(() => {});
 // Socket.IO connection handling
 io.on('connection', (socket) => {
 
-  socket.on('createRoom', async (callback) => {
+  socket.on('createRoom', async ({ username }, callback) => {
     try {
-      const roomCode = await gameManager.createRoom();
-      socket.join(roomCode);
+      const result = await gameManager.createRoom(socket.id, username || 'Ghost');
+      socket.join(result.roomCode);
 
-      const game = gameManager.getGame(roomCode);
+      const game = gameManager.getGame(result.roomCode);
       if (game) {
         socket.emit('gameState', game.getState());
       }
 
-      callback({ success: true, roomCode });
+      callback({ success: true, roomCode: result.roomCode, assignedGhost: result.assignedGhost });
     } catch (error) {
       callback({ success: false, error: 'Failed to create room' });
     }
