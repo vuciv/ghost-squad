@@ -38,24 +38,12 @@ class GameManager {
     });
   }
 
-  async createRoom(creatorSocketId?: string, creatorUsername?: string): Promise<{ roomCode: string; assignedGhost?: GhostType }> {
+  async createRoom(): Promise<string> {
     const roomCode = this.generateRoomCode();
     const game = new Game(roomCode, this.io, this.redisClient);
 
     this.games.set(roomCode, game);
     this.setupGameEndCallback(game);
-
-    let assignedGhost: GhostType | undefined = undefined;
-
-    // AUTOASSIGN: If creator socket ID provided, add them to the game immediately with first ghost
-    if (creatorSocketId) {
-      const firstGhost = game.getFirstAvailableGhost();
-      if (firstGhost) {
-        game.addPlayer(creatorSocketId, creatorUsername || 'Ghost', firstGhost);
-        this.playerRooms.set(creatorSocketId, roomCode);
-        assignedGhost = firstGhost;
-      }
-    }
 
     if (this.redisClient) {
       setImmediate(() => {
@@ -64,7 +52,7 @@ class GameManager {
           JSON.stringify({
             instanceId: this.instanceId,
             createdAt: Date.now(),
-            playerCount: game.getPlayerCount()
+            playerCount: 0
           }),
           { EX: 3600 }
         ).catch(() => {});
@@ -77,7 +65,7 @@ class GameManager {
       }
     }, 3600000);
 
-    return { roomCode, assignedGhost };
+    return roomCode;
   }
 
   createRoomWithCode(roomCode: string): Game {
