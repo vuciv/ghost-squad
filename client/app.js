@@ -130,7 +130,7 @@ roomCodeInput.addEventListener('keypress', (e) => {
 document.querySelectorAll('.ghost-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     const ghostType = btn.dataset.ghost;
-    const username = document.getElementById('username-input').value.trim() || 'Ghost';
+    const username = document.getElementById('username-input').value || 'Ghost';
 
     // Try to join with this ghost
     socket.emit('joinRoom', {
