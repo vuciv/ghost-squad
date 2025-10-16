@@ -42,6 +42,7 @@ class Game {
   private aggressiveAI: AggressiveAI;
   private trainedAI: TabularHybridCoordinator | null;
   private useTrainedAI: boolean;
+  private currentAIType: string = 'heuristic';
   private stepCount: number;
   private pacmanPosition: Position;
   private pacmanDirection: Direction;
@@ -113,10 +114,9 @@ class Game {
     this.pelletSet = this.createPositionSet(this.powerPellets);
     this.lastEmoteCalcFrame = 0;
 
-    // Pacman AI
     this.pacman = new PacmanAI(STARTING_POSITIONS.pacman);
     this.aggressiveAI = new AggressiveAI();
-    this.trainedAI = Game.sharedTrainedAI; // Use pre-loaded AI
+    this.trainedAI = Game.sharedTrainedAI;
     this.useTrainedAI = !!Game.sharedTrainedAI;
     this.stepCount = 0;
     this.pacmanPosition = { ...STARTING_POSITIONS.pacman };
@@ -276,6 +276,19 @@ class Game {
       if (!player.ready) return false;
     }
     return true;
+  }
+
+  setAIType(aiType: string): void {
+    this.currentAIType = aiType;
+    if (aiType === 'trained') {
+      this.useTrainedAI = !!Game.sharedTrainedAI;
+    } else {
+      this.useTrainedAI = false;
+    }
+  }
+
+  getAIType(): string {
+    return this.currentAIType;
   }
 
   start(): void {

@@ -17,11 +17,6 @@
       <p class="subtitle">Hunt the AI Pacman!</p>
 
       <div class="menu-section">
-        <label for="username-input" class="input-label">Your Name:</label>
-        <input type="text" id="username-input" placeholder="Enter your name" maxlength="20">
-      </div>
-
-      <div class="menu-section">
         <button id="create-room-btn" class="btn btn-primary">🎮 Create New Game</button>
       </div>
 
@@ -40,15 +35,22 @@
 
     <!-- Lobby Screen -->
     <div id="lobby-screen" class="menu-screen">
-      <h2>Game Lobby</h2>
-      <div id="room-code-display" class="room-code"></div>
-      <p class="subtitle">Share this code with friends to join!</p>
-      <div id="player-count-display" class="player-count">0/4 Players</div>
+      <div class="lobby-header">
+        <h2>Game Lobby</h2>
+        <div class="room-code-badge">
+          <button id="room-code-display" class="room-code-text">••••</button>
+        </div>
+      </div>
 
-      <div class="ghost-selection">
-        <h3>Choose Your Ghost:</h3>
-        <p class="ghost-hint">Click a ghost to select it. Locked ghosts are taken by other players.</p>
-        <div class="ghost-grid">
+      <div id="player-count-display" class="player-count">0/4 Players</div>
+      <div id="players-list" class="players-list-compact"></div>
+
+      <div class="lobby-divider"></div>
+
+      <div class="selection-container">
+        <div class="ghost-selection">
+          <h3>Pick Your Ghost</h3>
+          <div class="ghost-grid">
           <button class="ghost-btn" data-ghost="blinky">
             <canvas class="ghost-icon-canvas" width="32" height="32" data-ghost="blinky"></canvas>
             <span>Blinky</span>
@@ -70,11 +72,25 @@
             <div class="player-label"></div>
           </button>
         </div>
+        </div>
+
+        <div class="difficulty-selection">
+          <h3>Select Difficulty</h3>
+          <div class="ai-buttons-compact">
+            <button class="ai-btn-compact" data-ai="trained">
+              <span>EZ 😎</span>
+            </button>
+            <button class="ai-btn-compact selected" data-ai="heuristic">
+              <span>DEMON 😈</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div id="players-list" class="players-list"></div>
-      <button id="ready-btn" class="btn btn-secondary">Ready Up</button>
-      <p id="ready-status" class="ready-status">Waiting for all players to ready up...</p>
+      <div class="lobby-divider"></div>
+
+      <button id="ready-btn" class="btn btn-primary btn-large">Ready Up</button>
+      <p id="ready-status" class="ready-status"></p>
     </div>
 
     <!-- Timer Display (centered top) -->

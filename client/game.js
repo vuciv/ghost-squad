@@ -589,7 +589,7 @@ class GameScene extends Phaser.Scene {
   }
 
   updateDots(dots) {
-    const tileSize = GAME_CONSTANTS.TILE_SIZE;
+    if (!this.dotsGroup) return;
     const existingDots = new Set(dots.map(d => `${d.x},${d.y}`));
 
     this.dotsGroup.children.entries.forEach(dot => {
@@ -601,6 +601,7 @@ class GameScene extends Phaser.Scene {
   }
 
   updatePowerPellets(pellets) {
+    if (!this.pelletsGroup) return;
     const existingPellets = new Set(pellets.map(p => `${p.x},${p.y}`));
 
     this.pelletsGroup.children.entries.forEach(pellet => {

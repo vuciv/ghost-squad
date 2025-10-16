@@ -95,7 +95,7 @@ class GameManager {
     this.games.delete(roomCode);
   }
 
-  async joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType): Promise<{ success: boolean; error?: string }> {
+  async joinRoom(roomCode: string, socketId: string, username: string, ghostType: GhostType, aiType?: string): Promise<{ success: boolean; error?: string }> {
     let game = this.games.get(roomCode);
 
     if (!game) {
@@ -128,6 +128,10 @@ class GameManager {
 
     if (game.isGhostTaken(ghostType)) {
       return { success: false, error: 'Ghost already taken' };
+    }
+
+    if (aiType && !game.isStarted) {
+      game.setAIType(aiType);
     }
 
     game.addPlayer(socketId, username, ghostType);

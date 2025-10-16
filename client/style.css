@@ -264,68 +264,181 @@ body {
   display: inline-block;
 }
 
+.lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.lobby-header h2 {
+  margin: 0;
+}
+
+.room-code-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 0, 0.1);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ffff00;
+}
+
+.room-code-text {
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: bold;
+  color: #ffff00;
+  letter-spacing: 2px;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.btn-icon:hover {
+  opacity: 1;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 16px;
+  font-size: 16px;
+  margin-top: 20px;
+}
+
+.players-list-compact {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 10px;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
+.player-item {
+  padding: 4px 0;
+}
+
+.lobby-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 20px 0;
+}
+
+.selection-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .ghost-selection {
-  margin: 30px 0;
+  margin: 0;
 }
 
 .ghost-selection h3 {
-  font-size: 14px;
-  margin-bottom: 10px;
-}
-
-.ghost-hint {
-  font-size: 10px;
-  color: #888;
-  margin-bottom: 15px;
-  line-height: 1.4;
+  font-size: 13px;
+  margin: 0 0 12px 0;
+  color: #ffff00;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .ghost-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 10px;
 }
 
 .ghost-btn {
-  padding: 20px;
+  padding: 12px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11px;
   background: #111;
-  border: 3px solid #666;
-  border-radius: 5px;
+  border: 2px solid #444;
+  border-radius: 6px;
   color: #fff;
   cursor: pointer;
-  transition: transform 0.2s, border-color 0.2s;
-  display: grid;
-  grid-template-rows: 32px auto 16px;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-items: center;
-  gap: 10px;
-  height: 120px;
+  justify-content: center;
+  gap: 6px;
+  min-height: 90px;
 }
 
 .ghost-btn:hover:not(:disabled) {
   border-color: #fff;
-  transform: scale(1.05);
+  background: #1a1a1a;
 }
 
 .ghost-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .ghost-btn.selected {
   border-color: #0f0;
-  background: #030;
+  background: #0a2a0a;
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.2);
 }
 
 .ghost-btn .player-label {
-  font-size: 9px;
+  font-size: 8px;
   color: #0f0;
-  height: 16px;
+  height: 12px;
   display: flex;
   align-items: center;
+}
+
+.difficulty-selection {
+  margin: 0;
+}
+
+.difficulty-selection h3 {
+  font-size: 13px;
+  margin: 0 0 12px 0;
+  color: #ffff00;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.ai-buttons-compact {
+  display: flex;
+  gap: 12px;
+}
+
+.ai-btn-compact {
+  flex: 1;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  background: #111;
+  border: 2px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.ai-btn-compact:hover {
+  border-color: #fff;
+  background: #1a1a1a;
+}
+
+.ai-btn-compact.selected {
+  border-color: #0f0;
+  background: #0a2a0a;
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.2);
 }
 
 .ghost-icon {

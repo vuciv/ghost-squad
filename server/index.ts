@@ -66,9 +66,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('joinRoom', async ({ roomCode, username, ghostType }, callback) => {
+  socket.on('joinRoom', async ({ roomCode, username, ghostType, aiType }, callback) => {
     try {
-      const result = await gameManager.joinRoom(roomCode, socket.id, username || 'Ghost', ghostType);
+      const result = await gameManager.joinRoom(roomCode, socket.id, username || 'Ghost', ghostType, aiType);
       if (result.success) {
         socket.join(roomCode);
 
@@ -123,22 +123,19 @@ io.on('connection', (socket) => {
   socket.on('restartGame', ({ roomCode }) => {
     const game = gameManager.getGame(roomCode);
     if (game) {
-      // Create a new game with the same players
       const oldPlayers = Array.from(game.getState().players);
+      const aiType = game.getAIType();
 
-      // Delete old game
       gameManager.deleteGame(roomCode);
-
-      // Create new game with same room code
       const newGame = gameManager.createRoomWithCode(roomCode);
 
-      // Re-add all players (keep them ready)
+      newGame.setAIType(aiType);
+
       oldPlayers.forEach(player => {
         newGame.addPlayer(player.socketId, player.username, player.ghostType);
-        newGame.togglePlayerReady(player.socketId); // Set them as ready
+        newGame.togglePlayerReady(player.socketId);
       });
 
-      // Immediately start the new game
       io.to(roomCode).emit('gameRestarted');
       setTimeout(() => {
         newGame.start();

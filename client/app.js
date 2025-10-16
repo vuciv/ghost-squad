@@ -4,6 +4,7 @@ let socket;
 let game;
 let currentRoomCode = null;
 let selectedGhost = null;
+let selectedAI = 'heuristic';
 let currentGameState = null;
 let gameStarting = false;
 
@@ -20,7 +21,7 @@ const readyBtn = document.getElementById('ready-btn');
 const retryBtn = document.getElementById('retry-btn');
 const backToMenuBtn = document.getElementById('back-to-menu-btn');
 const roomCodeDisplay = document.getElementById('room-code-display');
-const playersList = document.getElementById('players-list');
+const playersList = document.getElementById('players-list-compact');
 const readyStatus = document.getElementById('ready-status');
 
 // Initialize Socket.IO connection
@@ -59,13 +60,11 @@ function initSocket() {
   });
 
   socket.on('gameRestarted', () => {
-    // Hide game over screen and restart game immediately
     gameStarting = false;
     document.getElementById('game-over-screen').classList.remove('active');
     timerDisplay.classList.remove('hidden');
     document.getElementById('lives-display').classList.remove('hidden');
 
-    // If game exists, restart the scene instead of destroying
     if (game && game.scene.scenes.length > 0) {
       const scene = game.scene.scenes[0];
       scene.scene.restart({
@@ -74,7 +73,6 @@ function initSocket() {
         myGhostType: selectedGhost
       });
     } else {
-      // Fallback: create new game if it doesn't exist
       game = new Phaser.Game(window.gameConfig);
       game.scene.start('GameScene', {
         socket,
@@ -87,41 +85,29 @@ function initSocket() {
 
 // UI Event Handlers
 createRoomBtn.addEventListener('click', () => {
-  const username = document.getElementById('username-input').value.trim() || 'Ghost';
-
   socket.emit('createRoom', (response) => {
     if (response.success) {
       currentRoomCode = response.roomCode;
       showLobby(response.roomCode);
 
-      // Auto-select first available ghost for room creator
       const firstGhost = 'blinky';
       socket.emit('joinRoom', {
         roomCode: currentRoomCode,
-        username,
-        ghostType: firstGhost
+        username: 'Ghost',
+        ghostType: firstGhost,
+        aiType: selectedAI
       }, (joinResponse) => {
         if (joinResponse.success) {
           selectedGhost = firstGhost;
-          // Mark ghost as selected
           document.querySelector(`.ghost-btn[data-ghost="${firstGhost}"]`)?.classList.add('selected');
-        } else {
         }
       });
-    } else {
     }
   });
 });
 
 joinRoomBtn.addEventListener('click', () => {
-  const username = document.getElementById('username-input').value.trim();
   const code = roomCodeInput.value.trim().toUpperCase();
-
-  if (!username) {
-    alert('Please enter your name first!');
-    document.getElementById('username-input').focus();
-    return;
-  }
 
   if (code.length !== 4) {
     alert('Please enter a 4-character room code!');
@@ -131,7 +117,6 @@ joinRoomBtn.addEventListener('click', () => {
 
   currentRoomCode = code;
   showLobby(code);
-  // Request current game state to see existing players
   socket.emit('requestGameState', { roomCode: code });
 });
 
@@ -150,13 +135,13 @@ document.querySelectorAll('.ghost-btn').forEach(btn => {
     // Try to join with this ghost
     socket.emit('joinRoom', {
       roomCode: currentRoomCode,
-      username,
-      ghostType
+      username: 'Ghost',
+      ghostType,
+      aiType: selectedAI
     }, (response) => {
       if (response.success) {
         selectedGhost = ghostType;
 
-        // Update UI
         document.querySelectorAll('.ghost-btn').forEach(b => {
           b.classList.remove('selected');
         });
@@ -165,6 +150,18 @@ document.querySelectorAll('.ghost-btn').forEach(btn => {
         alert(response.error);
       }
     });
+  });
+});
+
+document.querySelectorAll('.ai-btn-compact').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const aiType = btn.dataset.ai;
+    selectedAI = aiType;
+
+    document.querySelectorAll('.ai-btn-compact').forEach(b => {
+      b.classList.remove('selected');
+    });
+    btn.classList.add('selected');
   });
 });
 
@@ -319,6 +316,15 @@ function loadSprites() {
 window.addEventListener('DOMContentLoaded', () => {
   initSocket();
   loadSprites();
+
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (code && code.length === 4) {
+    roomCodeInput.value = code;
+    setTimeout(() => {
+      joinRoomBtn.click();
+    }, 500);
+  }
 });
 
 // Update lobby to show players and lock ghosts
@@ -387,28 +393,17 @@ function updateLobbyPlayers(state) {
     socket.emit('startGame', { roomCode: currentRoomCode });
   }
 
-  // Update players list
-  playersList.innerHTML = '<h4 style="margin-bottom: 10px;">Players in Lobby:</h4>';
-  if (state.players.length === 0) {
-    playersList.innerHTML += '<p style="color: #666;">Waiting for players...</p>';
-  } else {
-    state.players.forEach(player => {
-      const colors = {
-        blinky: '#ff0000',
-        pinky: '#ffb8ff',
-        inky: '#00ffff',
-        clyde: '#ffb852'
-      };
-      const playerDiv = document.createElement('div');
-      playerDiv.className = 'player-item';
-      const readyIcon = player.ready ? '✓ ' : '';
-      playerDiv.innerHTML = `<span style="color: ${colors[player.ghostType]}">👻</span> ${readyIcon}${player.username} - ${player.ghostType}`;
-      playersList.appendChild(playerDiv);
-    });
-  }
+  playersList.innerHTML = '';
+  const colors = { blinky: '#ff0000', pinky: '#ffb8ff', inky: '#00ffff', clyde: '#ffb852' };
+  state.players.forEach(player => {
+    const playerDiv = document.createElement('div');
+    playerDiv.className = 'player-item';
+    const icon = player.ready ? '✓' : '◯';
+    playerDiv.innerHTML = `<span style="color: ${colors[player.ghostType]}">👻</span> ${icon} ${player.username}`;
+    playersList.appendChild(playerDiv);
+  });
 }
 
-// Prevent accidental page closure
 window.addEventListener('beforeunload', (e) => {
   if (currentRoomCode) {
     e.preventDefault();
